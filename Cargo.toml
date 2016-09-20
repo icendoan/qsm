@@ -1,0 +1,13 @@
+[package]
+name = "qsm"
+version = "0.1.0"
+authors = ["Caleb Quilley <cquilley@tylercapital.co.uk>"]
+
+[dependencies]
+#clippy = "*"
+regex = "*"
+
+[dependencies.krust]
+path = "/data/rustkdb/krust"
+#git = "https://github.com/adwhit/krust.git"
+features = ["api"]
