@@ -1,0 +1,7 @@
+:n local;localhost;5000;;
+:n cme;kdbprod1;5051;;
+:n test;kdbtest1;60000;;
+:n csi;kdbprod1;7200;;
+:n prod;kdbprod1;60000;;
+:n trth;kdbprod1;5001;;
+:s test
