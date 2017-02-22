@@ -11,5 +11,5 @@ gnuplot = "*"
 byteorder="*"
 
 [dependencies.krust]
-path = "/data/rustkdb/krust"
+path = "../krust/"
 features = ["api"]
