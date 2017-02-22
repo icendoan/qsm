@@ -1,20 +1,10 @@
-#![feature(box_syntax, box_patterns, conservative_impl_trait, question_mark)]
+#![feature(box_syntax, box_patterns, conservative_impl_trait)]
 extern crate krust;
-use krust::kbindings::{self, KOwned, KVal, KData, K};
-
-extern crate regex;
-use regex::Regex;
-
 extern crate libc;
-
 extern crate byteorder;
-use byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
-
 extern crate gnuplot;
-use gnuplot::{AxesCommon, DataType};
 
-#[macro_use]
-extern crate lazy_static;
+use krust::kbindings::{KOwned, KVal, KData};
 
 use std::{ffi, ptr, fmt, net, env};
 use std::collections::{VecDeque, HashMap};
@@ -29,16 +19,7 @@ use conn::*;
 
 #[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq)]
 struct ServerId(u64);
-#[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq)]
-struct Port(u16);
 
-impl fmt::Display for Port
-{
-	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result
-	{
-		write!(f, "{}", self.0)
-	}
-}
 
 pub type R<T> = Result<T, Error>;
 
@@ -651,11 +632,11 @@ All \
 struct Server
 {
 	addr: String,
-	port: Port,
+	port: conn::Port,
 	name: String,
 	user: Option<String>,
 	pass: Option<String>,
-	queue: VecDeque<(Task, KOwned<'static>)>,
+	queue: VecDeque<(Task, KOwned)>,
 	task: Option<Task>,
 	status: Status,
 }
@@ -664,7 +645,7 @@ impl Server
 {
 	fn new(name: String,
 	       addr: String,
-	       port: Port,
+	       port: conn::Port,
 	       user: Option<String>,
 	       pass: Option<String>)
 	       -> Server

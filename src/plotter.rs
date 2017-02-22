@@ -1,5 +1,5 @@
 use super::*;
-use gnuplot;
+use gnuplot::{self, AxesCommon};
 use krust::kbindings::{self, KOwned, KVal, KData};
 
 type KTable<'a> = Vec<(&'a str, KVal<'a>)>;
@@ -96,9 +96,6 @@ pub fn plot(fig: &mut gnuplot::Figure, k: KOwned) -> R<()>
 			//        axes.lines(as_datatype_slice(axis),
 			//                   as_datatype_slice(col),
 			//                   opts);
-
-
-			axes.lines()
 
 		}
 

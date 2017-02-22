@@ -4,7 +4,7 @@ use std::os::unix;
 use krust;
 use krust::kbindings::{self, KOwned, K};
 
-use byteorder::{BigEndian, LittleEndian};
+use byteorder::{BigEndian, LittleEndian, ReadBytesExt};
 
 pub enum Connection
 {
@@ -12,10 +12,22 @@ pub enum Connection
 	Unix(unix::net::UnixStream),
 }
 
+#[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq)]
+pub struct Port(pub u16);
+
+impl fmt::Display for Port
+{
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result
+	{
+		write!(f, "{}", self.0)
+	}
+}
+
+
 impl Connection
 {
 	pub fn tcp(addr: &str,
-	           port: super::Port,
+	           port: Port,
 	           user: Option<&str>,
 	           pass: Option<&str>)
 	           -> R<Connection>
@@ -66,7 +78,7 @@ impl Connection
 				return Err(Error::KFailure);
 			}
 
-			let slice: &mut [u8] = (*kbuf).fetch_slice::<u8>();
+			let slice: &mut [u8] = (*(kbuf as *mut K)).fetch_slice_mut::<u8>();
 			match self.read(slice)
 			{
 				Ok(n) if n == len as usize => (),
