@@ -5,9 +5,7 @@ authors = ["Caleb Quilley <cquilley@tylercapital.co.uk>"]
 
 [dependencies]
 regex = "*"
-lazy_static = "*"
 libc = "*"
-gnuplot = "*"
 byteorder="*"
 
 [dependencies.krust]

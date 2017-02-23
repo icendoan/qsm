@@ -1,111 +1,183 @@
-use super::*;
-use gnuplot::{self, AxesCommon};
-use krust::kbindings::{self, KOwned, KVal, KData};
+use common::*;
+use krust::kbindings::{KOwned, KVal, KData};
+use std::process;
+use std::ops::Drop;
+
+trait GnuplotHandle
+{
+    fn clear(&mut self);
+    fn write(&mut self, command: &str);
+}
+
+impl GnuplotHandle for Figure
+{
+    fn clear(&mut self) { self.commands.clear(); }
+    fn write(&mut self, comm: &str) { self.commands.push_str(comm); self.commands.push('\n'); }
+}
+
+pub struct Figure
+{
+    commands: String,
+    gnuplot: process::Child,
+}
+
+impl Figure
+{
+    pub fn new() -> R<Self>
+    {
+        let mut comm = process::Command::new("gnuplot");
+        let child = comm.spawn().map_err(|_| Error::WithMsg("Cannot find GNUPlot - is it installed?"))?;
+        Ok(Figure
+        {
+            commands: String::new(),
+            gnuplot: child
+        })
+    }
+
+    pub fn figure2d(&mut self) -> Figure2D
+    {
+        Figure2D(self)
+    }
+
+    pub fn show(&mut self)
+    {
+        
+    }
+
+    pub fn clear(&mut self) { self.commands.clear() }
+
+    fn write_command(&mut self, command: &str)
+    {
+        self.commands.push_str(command);
+        self.commands.push('\n');
+    }
+}
+
+pub struct Figure2D<'a>(&'a mut Figure);
+
+impl <'a> Drop for Figure2D<'a>
+{
+    fn drop(&mut self)
+    {
+    }
+}
+
+impl <'a> Figure2D<'a>
+{
+    pub fn lines(mut self) -> LineGraph<'a>
+    {
+        self.0.write_command("");
+        LineGraph(self)
+    }
+
+    pub fn bars(mut self) -> BarGraph<'a>
+    {
+        self.0.write_command("");
+        BarGraph(self)
+    }
+
+    pub fn candlesticks(mut self) -> Candlesticks<'a>
+    {
+        self.0.write_command("");
+        Candlesticks(self)
+    }
+}
+
+pub struct LineGraph<'a>(Figure2D<'a>);
+impl<'a> Drop for LineGraph<'a> {
+    fn drop(&mut self)
+    {
+        
+    }
+}
+pub struct BarGraph<'a>(Figure2D<'a>);
+impl<'a> Drop for BarGraph<'a>
+{
+    fn drop(&mut self)
+    {
+        
+    }
+}
+
+pub struct Candlesticks<'a>(Figure2D<'a>);
+impl <'a> Drop for Candlesticks<'a>
+{
+    fn drop(&mut self)
+    {
+        
+    }
+}
 
 type KTable<'a> = Vec<(&'a str, KVal<'a>)>;
 fn keyed(t: KVal) -> R<(KTable, KTable)>
 {
-	match t
-	{
-		KVal::Dict(box k, box v) => Ok((unkeyed(k)?, unkeyed(v)?)),
-		KVal::Table(box k) => Ok((Vec::new(), unkeyed(k)?)),
-		_ => Err(Error::WithMsg("Plot output is not a table.")),
-	}
+    match t
+    {
+        KVal::Dict(box k, box v) => Ok((unkeyed(k)?, unkeyed(v)?)),
+        KVal::Table(box k) => Ok((Vec::new(), unkeyed(k)?)),
+        _ => Err(Error::WithMsg("Plot output is not a table.")),
+    }
 
 }
 
 fn unkeyed(t: KVal) -> R<KTable>
 {
-	fn extract_dict(d: KVal) -> R<(Box<KVal>, Box<KVal>)>
-	{
-		match d
-		{
-			KVal::Dict(k, v) => Ok((k, v)),
-			_ => Err(Error::Warning("")),
-		}
-	}
+    fn extract_dict(d: KVal) -> R<(Box<KVal>, Box<KVal>)>
+    {
+        match d
+        {
+            KVal::Dict(k, v) => Ok((k, v)),
+            _ => Err(Error::Warning("")),
+        }
+    }
 
-	let bad_type = Error::WithMsg("Plot expression yields an incorrect type.");
+    let bad_type = Error::WithMsg("Plot expression yields an incorrect type.");
 
-	if let KVal::Table(boxed_d) = t
-	{
-		let d = *boxed_d;
-		let (boxed_keys, boxed_vals) = extract_dict(d)?;
-		let names: &[*const i8] = match *boxed_keys
-		{
-			KVal::Symbol(KData::List(slice)) => slice,
-			_ => return Err(bad_type),
-		};
+    if let KVal::Table(boxed_d) = t
+    {
+        let d = *boxed_d;
+        let (boxed_keys, boxed_vals) = extract_dict(d)?;
+        let names: &[*const i8] = match *boxed_keys
+        {
+            KVal::Symbol(KData::List(slice)) => slice,
+            _ => return Err(bad_type),
+        };
 
-		let cols: Vec<KVal> = match *boxed_vals
-		{
-			KVal::Mixed(v) => v,
-			_ => return Err(bad_type),
-		};
+        let cols: Vec<KVal> = match *boxed_vals
+        {
+            KVal::Mixed(v) => v,
+            _ => return Err(bad_type),
+        };
 
-		let mut out = Vec::with_capacity(names.len());
+        let mut out = Vec::with_capacity(names.len());
 
-		for (nameptr, col) in names.iter().zip(cols.into_iter())
-		{
-			out.push((super::sym_str(nameptr), col));
-		}
+        for (nameptr, col) in names.iter().zip(cols.into_iter())
+        {
+            out.push((sym_str(nameptr), col));
+        }
 
-		Ok(out)
-	}
-	else
-	{
-		Err(bad_type)
-	}
+        Ok(out)
+    }
+    else
+    {
+        Err(bad_type)
+    }
 }
 
-pub fn plot(fig: &mut gnuplot::Figure, k: KOwned) -> R<()>
+pub fn plot(fig: &mut Figure, k: KOwned) -> R<()>
 {
-	fn lines(fig: &mut gnuplot::Figure,
-	         label: &str,
-	         axis: KVal,
-	         mut data: Vec<(&str, KVal)>)
-	         -> R<()>
-	{
-		if data.is_empty() || axis.len() == 0
-		{
-			return Err(Error::WithMsg("Plot output is empty."));
-		}
+    fn lines(fig: &mut Figure2D, label: &str, axis: KVal, data: &[(&str, KVal)]) -> R<()>
+    {
+        Ok(())
+    }
 
-		let line_options = [gnuplot::TickOption::Mirror(false),
-		                    gnuplot::TickOption::Inward(false),
-		                    gnuplot::TickOption::OnAxis(true)];
-		let colours = ["green", "red", "blue", "yellow", "orange"]; // ...
+    fn bars(fig: &mut Figure2D, label: &str, data: &[(&str, KVal)]) -> R<()>
+    {
+        Ok(())
+    }
 
-		fig.clear_axes();
+    fn candlesticks(fig: &mut Figure2D, label: &str, axis: KVal, data: &[(&str, KVal)]) -> R<()>
+    {Ok(())}
 
-		let axes: &mut gnuplot::Axes2D = fig.axes2d();
-		axes.set_x_label(label, &[])
-			.set_x_ticks(Some((gnuplot::AutoOption::Auto, axis.len() as u32)),
-			             &line_options[..],
-			             &[])
-			.set_y_ticks(Some((gnuplot::AutoOption::Auto, data[0].0.len() as u32)),
-			             &line_options[..],
-			             &[]);
-
-		for (i, (name, col)) in data.drain(..).enumerate()
-		{
-			let opts = &[gnuplot::PlotOption::Color(colours[i % colours.len()]),
-			             gnuplot::PlotOption::Caption(name)];
-			let badtype = Error::WithMsg("Plot output has an invalid type.");
-
-			//        axes.lines(as_datatype_slice(axis),
-			//                   as_datatype_slice(col),
-			//                   opts);
-
-		}
-
-		Ok(())
-	}
-
-	fn bars(fig: &mut gnuplot::Figure, label: &str, data: Vec<(&str, KVal)>) -> R<()>
-	{
-		Ok(())
-	}
-
-	Ok(())
+    Ok(())
 }

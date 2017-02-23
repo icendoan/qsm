@@ -2,7 +2,6 @@
 extern crate krust;
 extern crate libc;
 extern crate byteorder;
-extern crate gnuplot;
 
 use krust::kbindings::KOwned;
 
@@ -46,7 +45,6 @@ pub struct Control
 
 impl Control
 {
-		let mut fig: gnuplot::Figure = gnuplot::Figure::new();
     pub fn new() -> (Control, mpsc::Receiver<String>, mpsc::Sender<String>)
     {
         let (tx_t, rx_t) = mpsc::channel();
@@ -64,6 +62,12 @@ impl Control
     pub fn run(&mut self, rx_term: &mut mpsc::Receiver<String>)
     {
         let mut should_shutdown = false;
+        let mut fig: plotter::Figure = match plotter::Figure::new()
+        {
+            Ok(fig) => fig,
+            Err(e) => return println!("{}", e)
+        };
+
         while !should_shutdown
         {
             for s in self.servers.values_mut()
