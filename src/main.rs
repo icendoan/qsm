@@ -546,7 +546,7 @@ impl<'a> Action<'a>
             {
                 let mut s = Settings::unset();
                 s.mode = Some(Mode::Raw);
-                query(t, s)
+                query(&t[2..].trim(), s)
             },
             t if t.starts_with(":w") => save(&t[2..].trim()),
             t if t.starts_with(":x") => load(&t[2..].trim()),
