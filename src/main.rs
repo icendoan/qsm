@@ -472,6 +472,7 @@ impl<'a> Action<'a>
                     ("mode", "K") => s.mode = Some(Mode::K),
                     ("mode", "bt") |
                     ("mode", "backtrace") => s.mode = Some(Mode::Backtrace),
+                    ("mode", "Backtrace") => s.mode = Some(Mode::Backtrace),
                     ("mode", "raw") => s.mode = Some(Mode::Raw),
                     ("async", "true") => s.async = Some(true),
                     ("async", "false") => s.async = Some(false),
@@ -862,7 +863,7 @@ fn action(s: &mut State, a: Action) -> Option<()>
         };
 
         write!(file,
-               ":s mode={} async={}",
+               ":s mode={} async={}\n",
                s.settings.mode.unwrap_or(Mode::Q),
                s.settings.async.unwrap_or(false))
                 .unwrap();
@@ -956,7 +957,21 @@ fn pprint(k: kbindings::KVal)
 
     match k
     {
-        KVal::String(s) => println!("{}", s),
+        KVal::String(s) =>
+        {
+            if s.chars()
+                   .rev()
+                   .next()
+                   .map(|c| c == '\n')
+                   .unwrap_or(false)
+            {
+                print!("{}", s);
+            }
+            else
+            {
+                println!("{}", s)
+            }
+        },
         KVal::Symbol(s) => syms(s),
         KVal::Mixed(data) => data.into_iter().map(pprint).fold((), |x, _| x),
         KVal::Error(s) =>
