@@ -560,7 +560,7 @@ fn help()
 {
     println!(":n name addr port user pass - Define a new server to connect to.
 :c <name> - Connect to the specified server, or if not specified, the current one.
-:S name body - Create a new snippet with name, and value body. Invoke via inserting £name into text.
+:S name body - Create a new snippet with name, and value body. Invoke via inserting «name» into text.
 :s (name=value;)* - Set setting with name `name` to `value`. If invoked without any key-value pairs, prints current settings.
 :l - List known servers and snippets.
 :d <name> - Deletes the server or snippet with name `name`. If no name is supplied, deletes the current server.
@@ -569,7 +569,7 @@ fn help()
 :h - Prints this message.
 :w <path> - Saves servers, snippets and settings to the path ($HOME/.qsm if omitted).
 :x <path> - Runs a file as a qsm script ($HOME/.qsm if omitted - run on startup).
-\\ - exit the prompt
+\\\\ - exit the prompt
 
 All other strings are preprocessed and sent as queries to the current server.
 ")
