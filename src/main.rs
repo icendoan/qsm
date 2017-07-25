@@ -43,6 +43,8 @@ fn main()
             _ => break,
         }
     }
+
+    exit(state);
 }
 
 fn init(input: &mut String, state: &mut State) -> R<()>
@@ -68,6 +70,14 @@ fn init(input: &mut String, state: &mut State) -> R<()>
     }
 
     Ok(())
+}
+
+fn exit(mut state: State)
+{
+    for (_, server) in state.servers.iter_mut()
+    {
+        let _ = server.disconnect();
+    }
 }
 
 struct State
@@ -635,8 +645,14 @@ fn action(s: &mut State, a: Action) -> Option<()>
     {
         if let Some(n) = n
         {
-            s.servers.remove(n);
-            println!("Removed {}.", n);
+            println!("{}",
+                     s.servers
+                         .remove(n)
+                         .map(|_| format!("Removed {}.", n))
+                         .or(s.snippets.remove(n))
+                         .map(|_| format!("Removed {}.", n))
+                         .unwrap_or(format!("No such server or snippet {}.",
+                                            n)))
         }
         else
         {
@@ -746,9 +762,9 @@ fn action(s: &mut State, a: Action) -> Option<()>
 
         let mut query = match settings.mode
         {
-            None | Some(Mode::Q) => format!(".Q.s[{}]", query),
+            None | Some(Mode::Q) => format!(".Q.s[({})]", query),
             Some(Mode::K) => format!("k) {}", query),
-            Some(Mode::Backtrace) => format!(".Q.trp[{{.Q.s[{}]}};();{{raze \"'\",(string x),\"\\n\",.Q.sbt y}}]",
+            Some(Mode::Backtrace) => format!(".Q.trp[{{.Q.s[({})]}};();{{raze \"'\",(string x),\"\\n\",.Q.sbt y}}]",
                                              query),
             Some(Mode::Raw) => query.to_owned(),
         };
@@ -756,6 +772,7 @@ fn action(s: &mut State, a: Action) -> Option<()>
         let mut fmtstr = String::new();
         for (name, src) in s.snippets.iter()
         {
+            fmtstr.clear();
             let _ = write!(fmtstr, "«{}»", name);
             query = query.replace(&fmtstr, src);
         }
