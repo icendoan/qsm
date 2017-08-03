@@ -1024,7 +1024,11 @@ fn pprint(k: kbindings::KVal)
             println!()
 
         },
+
+        KVal::Unknown(101) => println!(), // this is an untyped null (::)
+
         // todo: better formatting for more types
+        KVal::Table(_) => println!("Suppressing output of raw table."),
         _ => println!("{:?}", k),
     }
 
