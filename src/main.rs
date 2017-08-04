@@ -1026,9 +1026,8 @@ fn pprint(k: kbindings::KVal)
         },
 
         KVal::Unknown(101) => println!(), // this is an untyped null (::)
-
+        ref k if k.len() > 100 => println!("Suppressing large raw output."),
         // todo: better formatting for more types
-        KVal::Table(_) => println!("Suppressing output of raw table."),
         _ => println!("{:?}", k),
     }
 
