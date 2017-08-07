@@ -1,12 +1,67 @@
-extern crate krust;
-
-use krust::kbindings;
-
-use std::{str, env, fs, ffi};
+#![feature(untagged_unions)]
+extern crate libc;
+use std::{str, env, fs, ffi, slice};
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::Write as FmtWrite;
 use std::io::{self, Write, BufRead, BufReader};
+
+const K_VOID: *const K = 0 as *const K;
+type CharStar = *const libc::c_char;
+// this shouldn't be sized
+// but right now rust untagged unions cannot have unsized members
+#[repr(C)]
+#[derive(Debug)]
+struct KA
+{
+    n: libc::c_long,
+    g0: [u8;1]
+}
+
+#[repr(C)]
+union KU
+{
+    g: [u8; 16],
+    h: libc::c_short,
+    i: libc::c_int,
+    j: libc::c_long,
+    e: libc::c_float,
+    f: libc::c_double,
+    s: CharStar,
+    k: *const K,
+    v: KA,
+}
+
+// k0 {signed char m,a,t;C u;I r;union{G g;H h;I i;J j;E e;F f;S s;struct k0*k;struct{J n;G G0[1];};};}*K;
+
+#[repr(C)]
+struct K
+{
+    m: libc::c_schar,
+    a: libc::c_schar,
+    t: libc::c_schar,
+    u: libc::c_char,
+    r: libc::c_int,
+    data: KU
+}
+
+impl fmt::Debug for K
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result
+    {
+        write!(f, "K@{:p} m: {:?}, a: {:?}, t: {:?}, u: {:?}, r: {:?}", &self, self.m, self.a, self.t, self.u, self.r)
+    }
+}
+
+#[link(name="kdb")]
+extern "C" {
+    fn khp(addr: CharStar, port: i32) -> i32;
+    fn khpu(addr: CharStar, port: i32, auth: CharStar) -> i32;
+    fn k(hande: i32, query: CharStar, ...) -> *const K;
+    fn r0(x: *const K);
+    fn kclose(handle: i32);
+}
+
 
 fn main()
 {
@@ -116,17 +171,17 @@ impl Server
         if let Some(h) = self.handle.take()
         {
             unsafe {
-                kbindings::kclose(h);
+                kclose(h);
             }
         }
 
         let h = unsafe {
             match self.auth
             {
-                Some(ref a) => kbindings::khpu(self.addr.as_ptr(),
+                Some(ref a) => khpu(self.addr.as_ptr(),
                                                self.port,
                                                a.as_ptr()),
-                None => kbindings::khp(self.addr.as_ptr(), self.port),
+                None => khp(self.addr.as_ptr(), self.port),
             }
         };
 
@@ -150,7 +205,7 @@ impl Server
         {
             Some(h) =>
             unsafe {
-                kbindings::kclose(h);
+                kclose(h);
             },
             None => println!("Not connected."),
         };
@@ -158,14 +213,14 @@ impl Server
         Ok(())
     }
 
-    fn sync(&mut self, query: String) -> R<*const kbindings::K>
+    fn sync(&mut self, query: String) -> R<*const K>
     {
         let h = self.handle.ok_or(Error::NotConnected)?;
         let q = ffi::CString::new(query).map_err(|_| Error::WithMsg("Bad query (string failure)"))?;
 
         let ptr = unsafe {
             let qptr = q.into_raw() as *const i8;
-            let ptr = kbindings::k(h, qptr, kbindings::kvoid());
+            let ptr = k(h, qptr, K_VOID);
             let _ = ffi::CString::from_raw(qptr as *mut i8);
             ptr
         };
@@ -180,9 +235,9 @@ impl Server
 
         unsafe {
             let qptr = q.into_raw();
-            let _ = kbindings::k(-1 * h,
+            let _ = k(-1 * h,
                                  qptr as *const i8,
-                                 kbindings::kvoid());
+                                 K_VOID);
             let _ = ffi::CString::from_raw(qptr);
         }
 
@@ -799,12 +854,8 @@ fn action(s: &mut State, a: Action) -> Option<()>
             {
                 Ok(kptr) =>
                 {
-                    let kval = kbindings::KVal::new(kptr);
-                    pprint(kval);
-                    unsafe {
-                        // free the k object
-                        kbindings::r0(kptr);
-                    }
+                    pprint(kptr);
+                    unsafe { r0(kptr); }
                 },
                 Err(e) =>
                 {
@@ -938,99 +989,85 @@ fn action(s: &mut State, a: Action) -> Option<()>
     }
 }
 
-fn pprint(k: kbindings::KVal)
+fn pprint(k: *const K)
 {
-    use kbindings::{KVal, KData};
+    unsafe fn cast_list<'a, T:'a>(x: *const K) -> &'a [T]
+    {
+        let len = (*x).data.v.n as usize;
+        let ptr = (*x).data.v.g0.as_ptr() as *const T;
 
-    fn sym(ptr: *const i8)
+        slice::from_raw_parts(ptr, len)
+    }
+
+    fn sym(prefix: char, ptr: CharStar)
     {
         let cstr: &ffi::CStr = unsafe { ffi::CStr::from_ptr(ptr) };
         match cstr.to_str()
         {
-            Ok(s) => print!("`{}", s),
+            Ok(s) => print!("{}{}", prefix, s),
             Err(_) => print!("'utf8"),
         }
 
     }
 
-    fn syms<'a>(d: KData<'a, *const i8>)
+    fn syms<'a>(prefix: char, d: &[CharStar])
     {
-        match d
+        print!("[");
+        for ptr in d
         {
-            KData::Atom(ptr) => sym(*ptr),
-
-            KData::List(ptrs) =>
-            {
-                print!("[");
-                for ptr in ptrs
-                {
-                    sym(*ptr)
-                }
-                print!("]");
-            },
+            sym(prefix, *ptr);
         }
-        println!()
+        print!("]");
+
+        println!();
     }
 
-    match k
+    fn string(x: *const K) -> &'static str
     {
-        KVal::String(s) =>
+        unsafe
         {
-            if s.chars()
-                   .rev()
-                   .next()
-                   .map(|c| c == '\n')
-                   .unwrap_or(false)
-            {
-                print!("{}", s);
-            }
-            else
-            {
-                println!("{}", s)
-            }
-        },
-        KVal::Symbol(s) => syms(s),
-        KVal::Mixed(data) => data.into_iter().map(pprint).fold((), |x, _| x),
-        KVal::Error(s) =>
-        unsafe {
-            match s
-            {
-                KData::Atom(ptr) =>
-                {
-                    let cstr = ffi::CStr::from_ptr(*ptr);
-                    match cstr.to_str()
-                    {
-                        Ok(s) => println!("'{}", s),
-                        Err(_) => println!("'utf8"),
-                    }
-                },
-
-                KData::List(ptrs) =>
-                {
-                    for ptr in ptrs
-                    {
-                        let cstr = ffi::CStr::from_ptr(*ptr);
-                        match cstr.to_str()
-                        {
-                            Ok(s) => print!("'{}", s),
-                            Err(_) => return println!("'utf8"),
-                        }
-
-                        print!(" ");
-                    }
-                },
-            }
-
-            println!()
-
-        },
-
-        KVal::Unknown(101) => println!(), // this is an untyped null (::)
-        ref k if k.len() > 100 => println!("Suppressing large raw output."),
-        // todo: better formatting for more types
-        _ => println!("{:?}", k),
+            let bytes = cast_list::<u8>(x);
+            str::from_utf8_unchecked(bytes)
+        }
     }
 
+    if k.is_null()
+    {
+        println!("Null kptr");
+        return;
+    }
+
+    unsafe
+    {
+        match (*k).t
+        {
+            10 =>
+            {
+                let s = string(&*k);
+                if s.chars().rev().next().map(|c| c == '\n').unwrap_or(false)
+                {
+                    print!("{}", s);
+                }
+                else
+                {
+                    println!("{}", s);
+                }
+            },
+            
+            -11 => sym('`',(*k).data.s),
+            11 => syms('`', cast_list::<CharStar>(k)),
+
+            0 => cast_list::<*const K>(k).iter().map(|x|pprint(*x)).fold((), |_, _| ()),
+
+            -128 => {sym('\'', (*k).data.s); println!()},
+
+            101 => println!(), // untyped null
+
+            100 => println!("{}", string(&*k)), // lambda
+
+            t => println!("Cannot print type {}", t),
+        }
+    }
 }
 
 fn err(e: Error) -> Option<()>

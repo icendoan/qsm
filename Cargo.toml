@@ -1,15 +1,11 @@
 [package]
+authors = ["Caleb Quilley <cquilley@tylercapital.co.uk>"]
 name = "qsm"
 version = "1.0.0"
-authors = ["Caleb Quilley <cquilley@tylercapital.co.uk>"]
 
 [dependencies]
-regex = "*"
-lazy_static = "*"
-libc = "*"
+byteorder = "*"
 gnuplot = "*"
-byteorder="*"
-
-[dependencies.krust]
-path = "../krust/"
-features = ["api"]
+lazy_static = "*"
+libc = "0.2.29"
+regex = "*"
