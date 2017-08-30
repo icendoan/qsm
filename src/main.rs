@@ -21,7 +21,7 @@ struct KA
 #[repr(C)]
 union KU
 {
-    g: [u8; 16],
+    g: libc::c_schar,
     h: libc::c_short,
     i: libc::c_int,
     j: libc::c_long,
@@ -31,8 +31,6 @@ union KU
     k: *const K,
     v: KA,
 }
-
-// k0 {signed char m,a,t;C u;I r;union{G g;H h;I i;J j;E e;F f;S s;struct k0*k;struct{J n;G G0[1];};};}*K;
 
 #[repr(C)]
 struct K
@@ -854,7 +852,7 @@ fn action(s: &mut State, a: Action) -> Option<()>
             {
                 Ok(kptr) =>
                 {
-                    pprint(kptr);
+                    println!("{}", pprint(kptr));
                     unsafe { r0(kptr); }
                 },
                 Err(e) =>
@@ -989,89 +987,267 @@ fn action(s: &mut State, a: Action) -> Option<()>
     }
 }
 
-fn pprint(k: *const K)
+unsafe fn as_vector<'a, T:'a>(x: *const K) -> &'a [T]
 {
-    unsafe fn cast_list<'a, T:'a>(x: *const K) -> &'a [T]
-    {
-        let len = (*x).data.v.n as usize;
-        let ptr = (*x).data.v.g0.as_ptr() as *const T;
+    let len = (*x).data.v.n as usize;
+    let ptr = (*x).data.v.g0.as_ptr() as *const T;
+    
+    slice::from_raw_parts(ptr, len)
+}
 
-        slice::from_raw_parts(ptr, len)
-    }
+unsafe fn get<'a, T:'a>(x: *const K, n: usize) -> &'a T
+{
+    &as_vector(x)[n]
+}
 
-    fn sym(prefix: char, ptr: CharStar)
+enum PPrinter
+{
+    Leaf(String),
+    Branch(Vec<PPrinter>, &'static str)
+}
+
+impl fmt::Display for PPrinter
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result
     {
-        let cstr: &ffi::CStr = unsafe { ffi::CStr::from_ptr(ptr) };
-        match cstr.to_str()
+        match *self
         {
-            Ok(s) => print!("{}{}", prefix, s),
-            Err(_) => print!("'utf8"),
-        }
-
-    }
-
-    fn syms<'a>(prefix: char, d: &[CharStar])
-    {
-        print!("[");
-        for ptr in d
-        {
-            sym(prefix, *ptr);
-        }
-        print!("]");
-
-        println!();
-    }
-
-    fn string(x: *const K) -> &'static str
-    {
-        unsafe
-        {
-            let bytes = cast_list::<u8>(x);
-            str::from_utf8_unchecked(bytes)
+            PPrinter::Leaf(ref s) => write!(f, "{}", s),
+            PPrinter::Branch(ref b, ref join) =>
+            {
+                b.iter()
+                    .map(|subtree| write!(f, "{}{}", subtree, join))
+                    .fold(Ok(()), Result::or)
+            }
+            
         }
     }
+}
 
-    if k.is_null()
+impl PPrinter
+{
+    fn len(&self) -> usize
     {
-        println!("Null kptr");
-        return;
+        match *self
+        {
+            PPrinter::Leaf(ref l) => l.len(),
+            PPrinter::Branch(ref bs, sep) => (sep.len() * (bs.len() - 1)) * bs.iter().map(PPrinter::len).fold(0, |x, y| x + y)
+        }
+    }
+}
+
+fn sym(x: CharStar) -> &'static str
+{
+    let cstr = unsafe { ffi::CStr::from_ptr(x) };
+    cstr.to_str().unwrap()
+}
+
+fn string(x: *const K) -> &'static str
+{
+    unsafe
+    {
+        let bytes = as_vector::<u8>(x);
+        str::from_utf8_unchecked(bytes)
+    }
+}
+
+fn pprint(x: *const K) -> PPrinter
+{
+    fn lj(x: PPrinter, y: PPrinter, rj: &'static str, cj: &'static str) -> PPrinter
+    {
+        match (x, y)
+        {
+            (PPrinter::Branch(xs, xsep), PPrinter::Branch(ys, ysep)) =>
+            {
+                let sep = if xsep == ysep { xsep } else { " " };
+                let subtrees = xs.into_iter()
+                    .zip(ys.into_iter())
+                    .map(|(l,r)| lj(l, r, cj, sep))
+                    .collect();
+
+                PPrinter::Branch(subtrees, rj)
+            },
+
+            (l@PPrinter::Leaf(_), r@PPrinter::Leaf(_)) =>
+            {
+                PPrinter::Branch(vec![l, r], cj)
+            },
+
+            (PPrinter::Leaf(lf), PPrinter::Branch(br, _)) =>
+            {
+                let subtrees = lf.chars().map(|c| {
+                    let mut s = String::new();
+                    s.push(c);
+                    PPrinter::Leaf(s)
+                })
+                    .zip(br.into_iter())
+                    .map(|(l, r)| lj(l, r, cj, " "))
+                    .collect();
+
+                PPrinter::Branch(subtrees, rj)
+            },
+
+            (PPrinter::Branch(br, _), PPrinter::Leaf(lf)) =>
+            {
+                let subtrees = br.into_iter()
+                    .zip(lf.chars().map(|c| {
+                        let mut s = String::new();
+                        s.push(c);
+                        PPrinter::Leaf(s)}))
+                    .map(|(l, r)| lj(l, r, cj, " "))
+                    .collect();
+
+                PPrinter::Branch(subtrees, rj)
+            },
+        }
+    }
+
+    fn flip(x: PPrinter) -> PPrinter
+    {
+        match x
+        {
+            PPrinter::Branch(bs, sep) =>
+            {
+                bs.into_iter().fold1(|x, y| lj(x, y, sep, "\n")).unwrap()
+            },
+
+            PPrinter::Leaf(lf) =>
+            {
+                let cs = lf.chars().into_iter()
+                    .map(|c| {
+                        let mut s = String::new();
+                        s.push(c);
+                        PPrinter::Leaf(s)
+                    }).collect();
+
+                PPrinter::Branch(cs, " ")
+            }
+        }
+    }
+
+    fn table(x: *const K, y: *const K) -> PPrinter
+    {
+        if !y.is_null()
+        {
+            return lj(table(x, K_VOID), table(y, K_VOID), " | ",  " ")
+        }
+
+        PPrinter::Leaf("nyi".to_owned())
+    }
+
+    if x.is_null()
+    {
+        return PPrinter::Leaf("Null ptr!".to_owned())
     }
 
     unsafe
     {
-        match (*k).t
+        match (*x).t
         {
-            10 =>
+            -128 => PPrinter::Leaf(format!("'{}", sym((*x).data.s))),
+            -11 => PPrinter::Leaf(format!("`{}", sym((*x).data.s))),
+            -10 => PPrinter::Leaf(format!("{}", (*x).data.g as u8 as char)),
+            -9 => PPrinter::Leaf(format!("{}", (*x).data.f)),
+            -7 => PPrinter::Leaf(format!("{}", (*x).data.j)),
+            -1 => PPrinter::Leaf(format!("{}", if 0 == (*x).data.h { 0 } else { 1 })),
+
+            0 =>
             {
-                let s = string(&*k);
-                if s.chars().rev().next().map(|c| c == '\n').unwrap_or(false)
-                {
-                    print!("{}", s);
-                }
-                else
-                {
-                    println!("{}", s);
-                }
+                let ptrs = as_vector::<*const K>(x);
+                let any_lists = ptrs.iter().map(|x| (**x).t).fold(-128, |x, y| std::cmp::max(x, y));
+
+                let sep = if any_lists >= 0 {"\n"} else {" "};
+
+                PPrinter::Branch(ptrs.into_iter().map(|x| pprint(*x)).collect(), sep)
             },
+
+            1 => PPrinter::Branch(as_vector::<libc::c_schar>(x)
+                                  .into_iter()
+                                  .map(|x| *x == 0)
+                                  .map(|x| PPrinter::Leaf(format!("{}", x)))
+                                  .chain(Some(PPrinter::Leaf("b".to_owned())).into_iter())
+                                  .collect(), ""),
+
+            7 => PPrinter::Branch(as_vector::<libc::c_longlong>(x)
+                                  .into_iter()
+                                  .map(|x| PPrinter::Leaf(format!("{}", x)))
+                                  .collect(), " "),
+
+            9 => PPrinter::Branch(as_vector::<libc::c_double>(x)
+                                  .into_iter()
+                                  .map(|x| PPrinter::Leaf(format!("{}", x)))
+                                  .collect(), " "),
+
+            10 => PPrinter::Leaf(string(x).to_owned()),
+
+            11 => PPrinter::Branch(as_vector::<CharStar>(x)
+                                   .into_iter()
+                                   .map(|x| PPrinter::Leaf(sym(*x).to_owned()))
+                                   .collect(), ""),
+
+            98 => table(x, K_VOID),
+
+            99 =>
+            {
+                let key_ptr: *const K = *get::<*const K>(x, 0);
+                let val_ptr: *const K = *get::<*const K>(x, 1);
+
+                // keyed table
+                if (*key_ptr).t == 98
+                {
+                    return table(key_ptr, val_ptr)
+                }
+
+                let keys = pprint(key_ptr);
+                let vals = flip(pprint(val_ptr));
+
+                let mut horiz = String::new();
+                for _ in 0..keys.len()
+                {
+                    horiz.push('-');
+                }
+
+                let branches = vec![
+                    keys,
+                    PPrinter::Leaf(horiz),
+                    vals
+                ];
+
+                PPrinter::Branch(branches, "\n")
+            },
+
+            100 => PPrinter::Leaf(string(x).to_owned()),
+            101 => PPrinter::Leaf("::".to_owned()),
+
             
-            -11 => sym('`',(*k).data.s),
-            11 => syms('`', cast_list::<CharStar>(k)),
-
-            0 => cast_list::<*const K>(k).iter().map(|x|pprint(*x)).fold((), |_, _| ()),
-
-            -128 => {sym('\'', (*k).data.s); println!()},
-
-            101 => println!(), // untyped null
-
-            100 => println!("{}", string(&*k)), // lambda
-
-            t => println!("Cannot print type {}", t),
+            t => PPrinter::Leaf(format!("Cannot pretty print type {}.", t))
         }
     }
 }
+
+
 
 fn err(e: Error) -> Option<()>
 {
     println!("{}", e);
     Some(())
 }
+
+trait IterE: Iterator
+{
+    fn fold1<F: Fn(Self::Item, Self::Item) -> Self::Item>(&mut self, f: F) -> Option<Self::Item>
+    {
+        let init = if let Some(init) = self.next()
+        {
+            init
+        }
+        else
+        {
+            return None
+        };
+
+        Some(self.fold(init, f))
+    }
+}
+
+impl<T: Iterator> IterE for T {}
