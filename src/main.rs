@@ -4,7 +4,7 @@ use std::{str, env, fs, ffi, slice};
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::Write as FmtWrite;
-use std::io::{self, Write, BufRead, BufReader};
+use std::io::{self, Write, BufRead, BufReader, Read};
 
 const K_VOID: *const K = 0 as *const K;
 type CharStar = *const libc::c_char;
@@ -15,7 +15,7 @@ type CharStar = *const libc::c_char;
 struct KA
 {
     n: libc::c_long,
-    g0: [u8;1]
+    g0: [u8; 1],
 }
 
 #[repr(C)]
@@ -40,14 +40,21 @@ struct K
     t: libc::c_schar,
     u: libc::c_char,
     r: libc::c_int,
-    data: KU
+    data: KU,
 }
 
 impl fmt::Debug for K
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result
     {
-        write!(f, "K@{:p} m: {:?}, a: {:?}, t: {:?}, u: {:?}, r: {:?}", &self, self.m, self.a, self.t, self.u, self.r)
+        write!(f,
+               "K@{:p} m: {:?}, a: {:?}, t: {:?}, u: {:?}, r: {:?}",
+               &self,
+               self.m,
+               self.a,
+               self.t,
+               self.u,
+               self.r)
     }
 }
 
@@ -80,7 +87,7 @@ fn main()
 
     loop
     {
-        match lock.read_line(&mut input)
+        match lock.read_to_string(&mut input)
         {
             Ok(_) =>
             {
@@ -177,8 +184,8 @@ impl Server
             match self.auth
             {
                 Some(ref a) => khpu(self.addr.as_ptr(),
-                                               self.port,
-                                               a.as_ptr()),
+                                    self.port,
+                                    a.as_ptr()),
                 None => khp(self.addr.as_ptr(), self.port),
             }
         };
@@ -219,6 +226,11 @@ impl Server
         let ptr = unsafe {
             let qptr = q.into_raw() as *const i8;
             let ptr = k(h, qptr, K_VOID);
+
+            if ptr.is_null() {
+                return Err(Error::NotConnected)
+            }
+
             let _ = ffi::CString::from_raw(qptr as *mut i8);
             ptr
         };
@@ -233,9 +245,7 @@ impl Server
 
         unsafe {
             let qptr = q.into_raw();
-            let _ = k(-1 * h,
-                                 qptr as *const i8,
-                                 K_VOID);
+            let _ = k(-1 * h, qptr as *const i8, K_VOID);
             let _ = ffi::CString::from_raw(qptr);
         }
 
@@ -614,6 +624,8 @@ impl<'a> Action<'a>
             t if t.starts_with(":w") => save(&t[2..].trim()),
             t if t.starts_with(":x") => load(&t[2..].trim()),
 
+            t if t.starts_with(":") => Err(Error::Parse(Some("Unrecognised command."))),
+
             t => query(t, Settings::unset()),
         }
     }
@@ -853,7 +865,9 @@ fn action(s: &mut State, a: Action) -> Option<()>
                 Ok(kptr) =>
                 {
                     println!("{}", pprint(kptr));
-                    unsafe { r0(kptr); }
+                    unsafe {
+                        r0(kptr);
+                    }
                 },
                 Err(e) =>
                 {
@@ -987,15 +1001,15 @@ fn action(s: &mut State, a: Action) -> Option<()>
     }
 }
 
-unsafe fn as_vector<'a, T:'a>(x: *const K) -> &'a [T]
+unsafe fn as_vector<'a, T: 'a>(x: *const K) -> &'a [T]
 {
     let len = (*x).data.v.n as usize;
     let ptr = (*x).data.v.g0.as_ptr() as *const T;
-    
+
     slice::from_raw_parts(ptr, len)
 }
 
-unsafe fn get<'a, T:'a>(x: *const K, n: usize) -> &'a T
+unsafe fn get<'a, T: 'a>(x: *const K, n: usize) -> &'a T
 {
     &as_vector(x)[n]
 }
@@ -1003,7 +1017,7 @@ unsafe fn get<'a, T:'a>(x: *const K, n: usize) -> &'a T
 enum PPrinter
 {
     Leaf(String),
-    Branch(Vec<PPrinter>, &'static str)
+    Branch(Vec<PPrinter>, &'static str),
 }
 
 impl fmt::Display for PPrinter
@@ -1018,8 +1032,8 @@ impl fmt::Display for PPrinter
                 b.iter()
                     .map(|subtree| write!(f, "{}{}", subtree, join))
                     .fold(Ok(()), Result::or)
-            }
-            
+            },
+
         }
     }
 }
@@ -1031,7 +1045,10 @@ impl PPrinter
         match *self
         {
             PPrinter::Leaf(ref l) => l.len(),
-            PPrinter::Branch(ref bs, sep) => (sep.len() * (bs.len() - 1)) * bs.iter().map(PPrinter::len).fold(0, |x, y| x + y)
+            PPrinter::Branch(ref bs, sep) => (sep.len() * (bs.len() - 1)) *
+                                             bs.iter()
+                                                 .map(PPrinter::len)
+                                                 .fold(0, |x, y| x + y),
         }
     }
 }
@@ -1044,8 +1061,7 @@ fn sym(x: CharStar) -> &'static str
 
 fn string(x: *const K) -> &'static str
 {
-    unsafe
-    {
+    unsafe {
         let bytes = as_vector::<u8>(x);
         str::from_utf8_unchecked(bytes)
     }
@@ -1053,7 +1069,11 @@ fn string(x: *const K) -> &'static str
 
 fn pprint(x: *const K) -> PPrinter
 {
-    fn lj(x: PPrinter, y: PPrinter, rj: &'static str, cj: &'static str) -> PPrinter
+    fn lj(x: PPrinter,
+          y: PPrinter,
+          rj: &'static str,
+          cj: &'static str)
+          -> PPrinter
     {
         match (x, y)
         {
@@ -1062,24 +1082,25 @@ fn pprint(x: *const K) -> PPrinter
                 let sep = if xsep == ysep { xsep } else { " " };
                 let subtrees = xs.into_iter()
                     .zip(ys.into_iter())
-                    .map(|(l,r)| lj(l, r, cj, sep))
+                    .map(|(l, r)| lj(l, r, cj, sep))
                     .collect();
 
                 PPrinter::Branch(subtrees, rj)
             },
 
-            (l@PPrinter::Leaf(_), r@PPrinter::Leaf(_)) =>
+            (l @ PPrinter::Leaf(_), r @ PPrinter::Leaf(_)) =>
             {
                 PPrinter::Branch(vec![l, r], cj)
             },
 
             (PPrinter::Leaf(lf), PPrinter::Branch(br, _)) =>
             {
-                let subtrees = lf.chars().map(|c| {
-                    let mut s = String::new();
-                    s.push(c);
-                    PPrinter::Leaf(s)
-                })
+                let subtrees = lf.chars()
+                    .map(|c| {
+                             let mut s = String::new();
+                             s.push(c);
+                             PPrinter::Leaf(s)
+                         })
                     .zip(br.into_iter())
                     .map(|(l, r)| lj(l, r, cj, " "))
                     .collect();
@@ -1090,10 +1111,12 @@ fn pprint(x: *const K) -> PPrinter
             (PPrinter::Branch(br, _), PPrinter::Leaf(lf)) =>
             {
                 let subtrees = br.into_iter()
-                    .zip(lf.chars().map(|c| {
-                        let mut s = String::new();
-                        s.push(c);
-                        PPrinter::Leaf(s)}))
+                    .zip(lf.chars()
+                             .map(|c| {
+                                      let mut s = String::new();
+                                      s.push(c);
+                                      PPrinter::Leaf(s)
+                                  }))
                     .map(|(l, r)| lj(l, r, cj, " "))
                     .collect();
 
@@ -1108,20 +1131,24 @@ fn pprint(x: *const K) -> PPrinter
         {
             PPrinter::Branch(bs, sep) =>
             {
-                bs.into_iter().fold1(|x, y| lj(x, y, sep, "\n")).unwrap()
+                bs.into_iter()
+                    .fold1(|x, y| lj(x, y, sep, "\n"))
+                    .unwrap()
             },
 
             PPrinter::Leaf(lf) =>
             {
-                let cs = lf.chars().into_iter()
+                let cs = lf.chars()
+                    .into_iter()
                     .map(|c| {
-                        let mut s = String::new();
-                        s.push(c);
-                        PPrinter::Leaf(s)
-                    }).collect();
+                             let mut s = String::new();
+                             s.push(c);
+                             PPrinter::Leaf(s)
+                         })
+                    .collect();
 
                 PPrinter::Branch(cs, " ")
-            }
+            },
         }
     }
 
@@ -1129,7 +1156,10 @@ fn pprint(x: *const K) -> PPrinter
     {
         if !y.is_null()
         {
-            return lj(table(x, K_VOID), table(y, K_VOID), " | ",  " ")
+            return lj(table(x, K_VOID),
+                      table(y, K_VOID),
+                      " ",
+                      " | ");
         }
 
         PPrinter::Leaf("nyi".to_owned())
@@ -1137,11 +1167,10 @@ fn pprint(x: *const K) -> PPrinter
 
     if x.is_null()
     {
-        return PPrinter::Leaf("Null ptr!".to_owned())
+        return PPrinter::Leaf("Null ptr!".to_owned());
     }
 
-    unsafe
-    {
+    unsafe {
         match (*x).t
         {
             -128 => PPrinter::Leaf(format!("'{}", sym((*x).data.s))),
@@ -1149,16 +1178,20 @@ fn pprint(x: *const K) -> PPrinter
             -10 => PPrinter::Leaf(format!("{}", (*x).data.g as u8 as char)),
             -9 => PPrinter::Leaf(format!("{}", (*x).data.f)),
             -7 => PPrinter::Leaf(format!("{}", (*x).data.j)),
-            -1 => PPrinter::Leaf(format!("{}", if 0 == (*x).data.h { 0 } else { 1 })),
+            -1 => PPrinter::Leaf(format!("{}",
+                                         if 0 == (*x).data.h { 0 } else { 1 })),
 
             0 =>
             {
                 let ptrs = as_vector::<*const K>(x);
-                let any_lists = ptrs.iter().map(|x| (**x).t).fold(-128, |x, y| std::cmp::max(x, y));
+                let any_lists = ptrs.iter()
+                    .map(|x| (**x).t)
+                    .fold(-128, |x, y| std::cmp::max(x, y));
 
-                let sep = if any_lists >= 0 {"\n"} else {" "};
+                let sep = if any_lists >= 0 { "\n" } else { " " };
 
-                PPrinter::Branch(ptrs.into_iter().map(|x| pprint(*x)).collect(), sep)
+                PPrinter::Branch(ptrs.into_iter().map(|x| pprint(*x)).collect(),
+                                 sep)
             },
 
             1 => PPrinter::Branch(as_vector::<libc::c_schar>(x)
@@ -1169,21 +1202,32 @@ fn pprint(x: *const K) -> PPrinter
                                   .collect(), ""),
 
             7 => PPrinter::Branch(as_vector::<libc::c_longlong>(x)
-                                  .into_iter()
-                                  .map(|x| PPrinter::Leaf(format!("{}", x)))
-                                  .collect(), " "),
+                                      .into_iter()
+                                      .map(|x| {
+                                               PPrinter::Leaf(format!("{}", x))
+                                           })
+                                      .collect(),
+                                  " "),
 
             9 => PPrinter::Branch(as_vector::<libc::c_double>(x)
-                                  .into_iter()
-                                  .map(|x| PPrinter::Leaf(format!("{}", x)))
-                                  .collect(), " "),
+                                      .into_iter()
+                                      .map(|x| {
+                                               PPrinter::Leaf(format!("{}", x))
+                                           })
+                                      .collect(),
+                                  " "),
 
             10 => PPrinter::Leaf(string(x).to_owned()),
 
-            11 => PPrinter::Branch(as_vector::<CharStar>(x)
-                                   .into_iter()
-                                   .map(|x| PPrinter::Leaf(sym(*x).to_owned()))
-                                   .collect(), ""),
+            11 =>
+            
+                PPrinter::Branch(as_vector::<CharStar>(x)
+                                     .into_iter()
+                                     .map(|x| {
+                                              PPrinter::Leaf(sym(*x).to_owned())
+                                          })
+                                     .collect(),
+                                 ""),
 
             98 => table(x, K_VOID),
 
@@ -1195,7 +1239,7 @@ fn pprint(x: *const K) -> PPrinter
                 // keyed table
                 if (*key_ptr).t == 98
                 {
-                    return table(key_ptr, val_ptr)
+                    return table(key_ptr, val_ptr);
                 }
 
                 let keys = pprint(key_ptr);
@@ -1207,11 +1251,7 @@ fn pprint(x: *const K) -> PPrinter
                     horiz.push('-');
                 }
 
-                let branches = vec![
-                    keys,
-                    PPrinter::Leaf(horiz),
-                    vals
-                ];
+                let branches = vec![keys, PPrinter::Leaf(horiz), vals];
 
                 PPrinter::Branch(branches, "\n")
             },
@@ -1219,8 +1259,7 @@ fn pprint(x: *const K) -> PPrinter
             100 => PPrinter::Leaf(string(x).to_owned()),
             101 => PPrinter::Leaf("::".to_owned()),
 
-            
-            t => PPrinter::Leaf(format!("Cannot pretty print type {}.", t))
+            t => PPrinter::Leaf(format!("Cannot pretty print type {}.", t)),
         }
     }
 }
@@ -1235,7 +1274,10 @@ fn err(e: Error) -> Option<()>
 
 trait IterE: Iterator
 {
-    fn fold1<F: Fn(Self::Item, Self::Item) -> Self::Item>(&mut self, f: F) -> Option<Self::Item>
+    fn fold1<F: Fn(Self::Item, Self::Item) -> Self::Item>
+        (&mut self,
+         f: F)
+         -> Option<Self::Item>
     {
         let init = if let Some(init) = self.next()
         {
@@ -1243,7 +1285,7 @@ trait IterE: Iterator
         }
         else
         {
-            return None
+            return None;
         };
 
         Some(self.fold(init, f))
