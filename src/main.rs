@@ -1,5 +1,7 @@
-#![feature(untagged_unions)]
+#![feature(untagged_unions, box_syntax)]
+#![allow(unused)]
 extern crate libc;
+extern crate chrono;
 use std::{str, env, fs, ffi, slice};
 use std::collections::HashMap;
 use std::fmt;
@@ -8,6 +10,7 @@ use std::io::{self, Write, BufRead, BufReader, Read};
 
 const K_VOID: *const K = 0 as *const K;
 type CharStar = *const libc::c_char;
+type S=*const libc::c_char;
 // this shouldn't be sized
 // but right now rust untagged unions cannot have unsized members
 #[repr(C)]
@@ -302,6 +305,8 @@ struct Settings
 {
     mode: Option<Mode>,
     async: Option<bool>,
+    cols: u32,
+    lines: u32,
 }
 
 impl Settings
@@ -311,6 +316,8 @@ impl Settings
         Settings {
             mode: None,
             async: None,
+            cols: 80,
+            lines: 50
         }
     }
 
@@ -318,6 +325,8 @@ impl Settings
     {
         self.mode = other.mode.or(self.mode);
         self.async = other.async.or(self.async);
+        self.cols = if 80 != other.cols { other.cols } else { self.cols };
+        self.lines = if 50 != other.lines { other.lines } else { self.lines };
     }
 }
 
@@ -332,6 +341,8 @@ impl fmt::Display for Settings
                "async: {}\n",
                self.async.unwrap_or(false))?;
 
+        write!(f, "cols: {}\n", self.cols)?;
+        write!(f, "lines: {}\n", self.lines)?;
         Ok(())
     }
 }
@@ -621,6 +632,12 @@ impl<'a> Action<'a>
                 s.mode = Some(Mode::Raw);
                 query(&t[2..].trim(), s)
             },
+            t if t.starts_with(r"\") =>
+            {
+                let mut s = Settings::unset();
+                s.mode = Some(Mode::Raw);
+                query(t, s)
+            },
             t if t.starts_with(":w") => save(&t[2..].trim()),
             t if t.starts_with(":x") => load(&t[2..].trim()),
 
@@ -864,7 +881,8 @@ fn action(s: &mut State, a: Action) -> Option<()>
             {
                 Ok(kptr) =>
                 {
-                    println!("{}", pprint(kptr));
+                    println!("{}", pprint(kptr)
+                             .render(settings.cols, settings.lines));
                     unsafe {
                         r0(kptr);
                     }
@@ -1014,6 +1032,7 @@ unsafe fn get<'a, T: 'a>(x: *const K, n: usize) -> &'a T
     &as_vector(x)[n]
 }
 
+/*
 enum PPrinter
 {
     Leaf(String),
@@ -1053,19 +1072,6 @@ impl PPrinter
     }
 }
 
-fn sym(x: CharStar) -> &'static str
-{
-    let cstr = unsafe { ffi::CStr::from_ptr(x) };
-    cstr.to_str().unwrap()
-}
-
-fn string(x: *const K) -> &'static str
-{
-    unsafe {
-        let bytes = as_vector::<u8>(x);
-        str::from_utf8_unchecked(bytes)
-    }
-}
 
 fn pprint(x: *const K) -> PPrinter
 {
@@ -1178,6 +1184,9 @@ fn pprint(x: *const K) -> PPrinter
             -10 => PPrinter::Leaf(format!("{}", (*x).data.g as u8 as char)),
             -9 => PPrinter::Leaf(format!("{}", (*x).data.f)),
             -7 => PPrinter::Leaf(format!("{}", (*x).data.j)),
+            -6 => PPrinter::Leaf(format!("{}", (*x).data.i)),
+            -5 => PPrinter::Leaf(format!("{}", (*x).data.h)),
+            -4 => PPrinter::Leaf(format!("{}", (*x).data.g as u8)),
             -1 => PPrinter::Leaf(format!("{}",
                                          if 0 == (*x).data.h { 0 } else { 1 })),
 
@@ -1263,8 +1272,157 @@ fn pprint(x: *const K) -> PPrinter
         }
     }
 }
+*/
 
+enum PPrinter
+{
+    Atom(String),
+    Vec(Vec<PPrinter>),
+    Dict(Box<PPrinter>, Box<PPrinter>),
+    Table(Vec<PPrinter>, Vec<PPrinter>)
+}
 
+impl PPrinter
+{
+    fn render(&self, cols: u32, lines: u32) -> String {panic!()}
+    fn render_flat(&self, cols: u32, lines: u32) -> String {panic!()}
+}
+
+fn pprint(x: *const K) -> PPrinter
+{
+    fn ma<T: ToString>(x:T)->PPrinter{PPrinter::Atom(x.to_string())}
+    fn pfmt(x:i64)->String {
+        use chrono::TimeZone;
+        let s=((x/8.64e13f64 as i64)+10957)*8.64e4f64 as i64;
+        let n=(x%1e9f64 as i64) as u32;
+        chrono::Utc.timestamp(s,n).to_string()
+    }
+    fn dfmt(x:i32)->String{
+        use std::ops::Add;
+        chrono::NaiveDate::from_ymd(2000,1,1)
+            .add(chrono::Duration::days(x as i64))
+            .to_string()
+    }
+    fn sym(x: CharStar) -> &'static str
+    {
+        let cstr = unsafe { ffi::CStr::from_ptr(x) };
+        cstr.to_str().unwrap()
+    }
+    
+    fn string(x: *const K) -> &'static str
+    {
+        unsafe {
+            let bytes = as_vector::<u8>(x);
+            str::from_utf8_unchecked(bytes)
+        }
+    }
+
+    fn dict(x: *const K) -> PPrinter {
+        unsafe {
+            let k = get::<*const K>(x, 0);
+            let v = get::<*const K>(x, 1);
+            PPrinter::Dict(box pprint(*k), box pprint(*v))
+        }
+    }
+    fn table(x: *const K) -> PPrinter
+    {
+        unsafe
+        {
+            let d = *get::<*const K>(x, 0);
+            let c = as_vector::<S>(*get::<*const K>(d, 0))
+                .into_iter()
+                .map(|x| PPrinter::Atom(sym(*x).to_owned()))
+                .collect();
+            let r = as_vector::<*const K>(*get::<*const K>(d, 1))
+                .into_iter()
+                .map(|x| pprint(*x))
+                .collect();
+            PPrinter::Table(c, r)
+        }
+    }
+    fn list(x: *const K) -> PPrinter
+    {
+        unsafe
+        {
+            match (*x).t
+            {
+                0 => PPrinter::Vec(as_vector::<*const K>(x).iter()
+                                   .map(|x|pprint(*x))
+                                   .collect()),
+                1 => PPrinter::Vec(as_vector::<i8>(x).into_iter()
+                                   .map(|x| PPrinter::Atom(i8::to_string(x)))
+                                   .collect()),
+                4 => PPrinter::Vec(as_vector::<u8>(x).into_iter()
+                                   .map(|x|PPrinter::Atom(u8::to_string(x)))
+                                   .collect()),
+                5 => PPrinter::Vec(as_vector::<i16>(x).into_iter()
+                                   .map(|x|PPrinter::Atom(x.to_string()))
+                                   .collect()),
+                6 => PPrinter::Vec(as_vector::<i32>(x).into_iter()
+                                   .map(ma).collect()),
+                7 => PPrinter::Vec(as_vector::<i64>(x).into_iter()
+                                   .map(ma).collect()),
+                8 => PPrinter::Vec(as_vector::<f32>(x).into_iter()
+                                   .map(ma).collect()),
+                9 => PPrinter::Vec(as_vector::<f64>(x).into_iter()
+                                   .map(ma).collect()),
+                10 => PPrinter::Atom(string(x).to_owned()),
+                11 => PPrinter::Vec(as_vector::<CharStar>(x).into_iter()
+                                    .map(|x|PPrinter::Atom(sym(*x).to_owned()))
+                                    .collect()),
+                12 => PPrinter::Vec(as_vector::<i64>(x).into_iter()
+                                    .map(|x|PPrinter::Atom(pfmt(*x)))
+                                    .collect()),
+                14 => PPrinter::Vec(as_vector::<i32>(x).into_iter()
+                                    .map(|x|PPrinter::Atom(dfmt(*x)))
+                                    .collect()),
+                _ => PPrinter::Atom(format!("Cannot pprint type {}", (*x).t))
+            }
+        }
+    }
+
+    fn atom(x: *const K) -> PPrinter
+    {
+        unsafe {
+
+        match(*x).t 
+        {
+            -128 => PPrinter::Atom(format!("'{}", sym((*x).data.s))),
+            -14 => PPrinter::Atom(dfmt((*x).data.i)),
+            -12 => PPrinter::Atom(pfmt((*x).data.j)),
+            -11 => PPrinter::Atom(format!("`{}",sym((*x).data.s))),
+            -10 => PPrinter::Atom(format!("{}", (*x).data.g as u8 as char)),
+            -9 => PPrinter::Atom(format!("{}", (*x).data.f)),
+            -8 => PPrinter::Atom(format!("{}", (*x).data.e)),
+            -7 => PPrinter::Atom(format!("{}", (*x).data.j)),
+            -6 => PPrinter::Atom(format!("{}", (*x).data.i)),
+            -5 => PPrinter::Atom(format!("{}", (*x).data.h)),
+            -4 => PPrinter::Atom(format!("{}", (*x).data.g as u8)),
+            -1 => PPrinter::Atom(format!("{}b", if 0 == (*x).data.h { 0 } else { 1 })),
+            _ => PPrinter::Atom(format!("Cannot pprint type {}", (*x).t))
+        }
+
+    }
+}
+
+    if x.is_null()
+    {
+        return PPrinter::Atom("nullptr".to_owned());
+    }
+
+    let t = unsafe { (*x).t };
+
+    match t
+    {
+        99 => dict(x),
+        98 => table(x),
+        100 => PPrinter::Atom(string(x).to_owned()),
+        101 => PPrinter::Atom("::".to_owned()),
+
+        t if t < 0 => atom(x),
+        _ => list(x)
+    }
+}
 
 fn err(e: Error) -> Option<()>
 {
