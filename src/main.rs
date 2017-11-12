@@ -1053,14 +1053,14 @@ impl PPrinter
         {
             PPrinter::Atom(ref x) =>
             {
-                if x.len() > cols
+                for t in x.split('\n')
                 {
-                    s.push_str(&x[0..cols]);
+                    s.push_str(t);
+                    s.push_str(r"\n");
                 }
-                else
-                {
-                    s.push_str(&x);
-                }
+                s.pop();
+                s.pop();
+                s.truncate(cols);
             },
             PPrinter::Vec(ref ps) => {
                 for p in ps
