@@ -9,7 +9,6 @@ use std::fmt::Write as FmtWrite;
 use std::io::{self, Write, BufRead, BufReader, Read};
 
 const K_VOID: *const K = 0 as *const K;
-type CharStar = *const libc::c_char;
 type S=*const libc::c_char;
 // this shouldn't be sized
 // but right now rust untagged unions cannot have unsized members
@@ -30,7 +29,7 @@ union KU
     j: libc::c_long,
     e: libc::c_float,
     f: libc::c_double,
-    s: CharStar,
+    s: S,
     k: *const K,
     v: KA,
 }
@@ -63,9 +62,9 @@ impl fmt::Debug for K
 
 #[link(name="kdb")]
 extern "C" {
-    fn khp(addr: CharStar, port: i32) -> i32;
-    fn khpu(addr: CharStar, port: i32, auth: CharStar) -> i32;
-    fn k(hande: i32, query: CharStar, ...) -> *const K;
+    fn khp(addr: S, port: i32) -> i32;
+    fn khpu(addr: S, port: i32, auth: S) -> i32;
+    fn k(hande: i32, query: S, ...) -> *const K;
     fn r0(x: *const K);
     fn kclose(handle: i32);
 }
@@ -881,8 +880,7 @@ fn action(s: &mut State, a: Action) -> Option<()>
             {
                 Ok(kptr) =>
                 {
-                    println!("{}", pprint(kptr)
-                             .render(settings.cols, settings.lines));
+                    println!("{}", pprint(kptr));
                     unsafe {
                         r0(kptr);
                     }
@@ -1032,213 +1030,91 @@ unsafe fn get<'a, T: 'a>(x: *const K, n: usize) -> &'a T
     &as_vector(x)[n]
 }
 
-enum PPrinter
+fn pprint(x: *const K) -> String
 {
-    Atom(String),
-    Vec(Vec<PPrinter>),
-    Dict(Box<PPrinter>, Box<PPrinter>),
-    Table(Vec<PPrinter>, Vec<PPrinter>)
-}
-
-impl PPrinter
-{
-    fn render(&self, cols: usize, lines: usize) -> String {
-        self.render_flat(cols, lines)
-    }
-
-    fn render_flat(&self, cols: usize, lines: usize) -> String
-    {
-        let mut s = String::new();
-        match *self
-        {
-            PPrinter::Atom(ref x) =>
-            {
-                for t in x.split('\n')
-                {
-                    s.push_str(t);
-                    s.push_str(r"\n");
-                }
-                s.pop();
-                s.pop();
-                s.truncate(cols);
-            },
-            PPrinter::Vec(ref ps) => {
-                for p in ps
-                {
-                    s.push_str(&p.render_flat(cols, lines));
-                    s.push(' ');
-                }
-                s.pop();
-
-                s.truncate(cols);
-            }
-
-            PPrinter::Dict(box ref k, box ref v) => {
-                s.push_str(&k.render_flat(cols, lines));
-                s.push_str("!");
-                s.push_str(&v.render_flat(cols, lines));
-                s.truncate(cols);
-            }
-
-            PPrinter::Table(ref names, ref columns) => {
-
-                s.push_str("+");
-                for n in names {
-                    s.push_str(&n.render_flat(cols, lines));
-                }
-                
-                s.push_str("!");
-
-                for c in columns
-                {
-                    s.push_str(&c.render_flat(cols, lines));
-                    s.push(';');
-                }
-                s.pop();
-                s.truncate(cols);
-            }
-        }
-
-        return s;
-    }
-}
-
-fn pprint(x: *const K) -> PPrinter
-{
-    fn ma<T: ToString>(x:T)->PPrinter{PPrinter::Atom(x.to_string())}
+    use chrono::{TimeZone,Datelike,Timelike};
+    fn js<'a, T:'a+ToString>(s:&mut String, x: &'a [T], j: &str) {
+        if x.len()==1{s.push(',');s.push_str(x[0].to_string().as_ref())}
+        else{for y in x{s.push_str(y.to_string().as_ref());s.push_str(j);}
+             let n=s.len()-j.len();s.truncate(n);}}
+    fn r1(s: &mut String, x: &[i8]) {
+        for b in x {if *b == 0 {s.push('0');} else { s.push('1');}}
+        s.push('b');}
+    fn r4(s: &mut String, x: &[i8]) {
+        s.push_str("0x"); for b in x {
+            s.push(b"0123456789abcdef"[((*b as u8)<<4) as usize] as char);
+            s.push(b"0123456789abcdef"[((*b as u8)&15) as usize] as char);}}
+    fn r12(s:&mut String,x:&[i32]){
+        for d in x{s.push_str(dfmt(*d).as_ref());s.push_str(" ");}
+        let n=s.len()-" ".len();s.truncate(n);}
+    fn r14(s:&mut String,x:&[i64]){
+        for p in x{s.push_str(pfmt(*p).as_ref());s.push_str(" ");}
+        let n=s.len()-" ".len();s.truncate(n);}
     fn pfmt(x:i64)->String {
-        use chrono::TimeZone;
-        let s=((x/8.64e13f64 as i64)+10957)*8.64e4f64 as i64;
-        let n=(x%1e9f64 as i64) as u32;
-        chrono::Utc.timestamp(s,n).to_string()
-    }
+        let d=((x/8.64e13f64 as i64)+10957)*(8.64e4f64 as i64);
+        let s=(x-d)/1e9f32 as i64;
+        let n=((x-s)%1e9f32 as i64)as u32;
+        let t=chrono::Utc.timestamp(d+s,n);
+        format!("{}.{}.{}D{}:{}:{}.{}",t.year(),t.month(),t.day(),
+                t.hour(),t.minute(),t.second(),t.nanosecond())}
     fn dfmt(x:i32)->String{
         use std::ops::Add;
-        chrono::NaiveDate::from_ymd(2000,1,1)
-            .add(chrono::Duration::days(x as i64))
-            .to_string()
-    }
-    fn sym(x: CharStar) -> &'static str
-    {
+        let d=chrono::NaiveDate::from_ymd(2000,1,1)
+            .add(chrono::Duration::days(x as i64));
+        format!("{}.{}.{}",d.year(),d.month(),d.day())}
+    fn sym(x: S) -> &'static str {
         let cstr = unsafe { ffi::CStr::from_ptr(x) };
-        cstr.to_str().unwrap()
-    }
-    
-    fn string(x: *const K) -> &'static str
-    {
-        unsafe {
-            let bytes = as_vector::<u8>(x);
-            str::from_utf8_unchecked(bytes)
-        }
-    }
-
-    fn dict(x: *const K) -> PPrinter {
-        unsafe {
-            let k = get::<*const K>(x, 0);
-            let v = get::<*const K>(x, 1);
-            PPrinter::Dict(box pprint(*k), box pprint(*v))
-        }
-    }
-    fn table(x: *const K) -> PPrinter
-    {
-        unsafe
-        {
-            let d = (*x).data.k; 
-            let c = as_vector::<S>(*get::<*const K>(d, 0))
-                .into_iter()
-                .map(|x| PPrinter::Atom(sym(*x).to_owned()))
-                .collect();
-            let r = as_vector::<*const K>(*get::<*const K>(d, 1))
-                .into_iter()
-                .map(|x| pprint(*x))
-                .collect();
-            PPrinter::Table(c, r)
-        }
-    }
-    fn list(x: *const K) -> PPrinter
-    {
-        unsafe
-        {
-            match (*x).t
-            {
-                0 => PPrinter::Vec(as_vector::<*const K>(x).iter()
-                                   .map(|x|pprint(*x))
-                                   .collect()),
-                1 => PPrinter::Vec(as_vector::<i8>(x).into_iter()
-                                   .map(|x| PPrinter::Atom(i8::to_string(x)))
-                                   .collect()),
-                4 => PPrinter::Vec(as_vector::<u8>(x).into_iter()
-                                   .map(|x|PPrinter::Atom(u8::to_string(x)))
-                                   .collect()),
-                5 => PPrinter::Vec(as_vector::<i16>(x).into_iter()
-                                   .map(|x|PPrinter::Atom(x.to_string()))
-                                   .collect()),
-                6 => PPrinter::Vec(as_vector::<i32>(x).into_iter()
-                                   .map(ma).collect()),
-                7 => PPrinter::Vec(as_vector::<i64>(x).into_iter()
-                                   .map(ma).collect()),
-                8 => PPrinter::Vec(as_vector::<f32>(x).into_iter()
-                                   .map(ma).collect()),
-                9 => PPrinter::Vec(as_vector::<f64>(x).into_iter()
-                                   .map(ma).collect()),
-                10 => PPrinter::Atom(string(x).to_owned()),
-                11 => PPrinter::Vec(as_vector::<CharStar>(x).into_iter()
-                                    .map(|x|PPrinter::Atom(sym(*x).to_owned()))
-                                    .collect()),
-                12 => PPrinter::Vec(as_vector::<i64>(x).into_iter()
-                                    .map(|x|PPrinter::Atom(pfmt(*x)))
-                                    .collect()),
-                14 => PPrinter::Vec(as_vector::<i32>(x).into_iter()
-                                    .map(|x|PPrinter::Atom(dfmt(*x)))
-                                    .collect()),
-                _ => PPrinter::Atom(format!("Cannot pprint type {}", (*x).t))
-            }
-        }
-    }
-
-    fn atom(x: *const K) -> PPrinter
-    {
-        unsafe {
-
-        match(*x).t 
-        {
-            -128 => PPrinter::Atom(format!("'{}", sym((*x).data.s))),
-            -14 => PPrinter::Atom(dfmt((*x).data.i)),
-            -12 => PPrinter::Atom(pfmt((*x).data.j)),
-            -11 => PPrinter::Atom(format!("`{}",sym((*x).data.s))),
-            -10 => PPrinter::Atom(format!("{}", (*x).data.g as u8 as char)),
-            -9 => PPrinter::Atom(format!("{}", (*x).data.f)),
-            -8 => PPrinter::Atom(format!("{}", (*x).data.e)),
-            -7 => PPrinter::Atom(format!("{}", (*x).data.j)),
-            -6 => PPrinter::Atom(format!("{}", (*x).data.i)),
-            -5 => PPrinter::Atom(format!("{}", (*x).data.h)),
-            -4 => PPrinter::Atom(format!("{}", (*x).data.g as u8)),
-            -1 => PPrinter::Atom(format!("{}b", if 0 == (*x).data.h { 0 } else { 1 })),
-            _ => PPrinter::Atom(format!("Cannot pprint type {}", (*x).t))
-        }
-
-    }
+        cstr.to_str().unwrap()}
+    fn string(x: *const K) -> &'static str {
+        unsafe {let bytes = as_vector::<u8>(x);
+            str::from_utf8_unchecked(bytes)}}
+    fn r0(s:&mut String,x:*const K){
+        unsafe{match (*x).t{
+            -128=>s.push_str(&format!("'{}",sym((*x).data.s))),
+            -12=>s.push_str(&pfmt((*x).data.j)),
+            -14=>s.push_str(&dfmt((*x).data.i)),
+            -11=>s.push_str(&format!("`{}",sym((*x).data.s))),
+            -10=>s.push_str(&format!("{}",(*x).data.g as u8 as char)),
+            -9=>s.push_str(&format!("{}",(*x).data.f)),
+            -8=>s.push_str(&format!("{}",(*x).data.e)),
+            -7=>s.push_str(&format!("{}",(*x).data.j)),
+            -6=>s.push_str(&format!("{}",(*x).data.i)),
+            -5=>s.push_str(&format!("{}",(*x).data.h)),
+            -4=>s.push_str(&format!("0x{:x}",(*x).data.g)),
+            -1=>s.push_str(&format!("{}b",if 0==(*x).data.g{0}else{1})),
+            0=>{s.push('(');for k in as_vector::<*const K>(x){
+                    r0(s,*k);s.push(';');}s.pop();s.push(')');},
+            1=>r1(s,as_vector::<i8>(x)),
+            4=>r4(s,as_vector::<i8>(x)),
+            5=>js(s,as_vector::<i16>(x)," "),
+            6=>js(s,as_vector::<i32>(x)," "),
+            7=>js(s,as_vector::<i64>(x)," "),
+            8=>js(s,as_vector::<f32>(x)," "),
+            9=>js(s,as_vector::<f64>(x)," "),
+            10=>s.push_str(string(x)),
+            11=>for p in as_vector::<S>(x){s.push('`');s.push_str(sym(*p));},
+            14=>{s.push('(');for d in as_vector::<i32>(x)
+                 {s.push_str(dfmt(*d).as_ref());s.push(';');}
+                 s.pop();s.push(')');},
+            12=>{s.push('(');for p in as_vector::<i64>(x)
+                 {s.push_str(pfmt(*p).as_ref());s.push(';');}
+                 s.pop();s.push(')');},
+            98=>t0(s,*get::<*const K>((*x).data.k,0),
+                   *get::<*const K>((*x).data.k,1)),
+            99=>d0(s,*get::<*const K>(x,0),*get::<*const K>(x,1)),
+            _=>panic!("nyi")
+        }};}
+    fn t0(s:&mut String,n:*const K,c:*const K)
+    {unsafe{s.push('+');for p in as_vector::<S>(n)
+            {s.push('`');s.push_str(sym(*p));}
+        s.push('!');r0(s,c);}}
+    fn d0(s:&mut String,k:*const K,v:*const K){unsafe{
+        r0(s,k);s.push('!');r0(s,v);}}
+    if x.is_null() { return "nullptr".to_owned() }
+    let mut s=String::new();
+    unsafe{match (*x).t{_=>r0(&mut s,x)}}
+    s
 }
-
-    if x.is_null()
-    {
-        return PPrinter::Atom("nullptr".to_owned());
-    }
-
-    let t = unsafe { (*x).t };
-
-    match t
-    {
-        99 => dict(x),
-        98 => table(x),
-        100 => PPrinter::Atom(string(x).to_owned()),
-        101 => PPrinter::Atom("::".to_owned()),
-
-        t if t < 0 => atom(x),
-        _ => list(x)
-    }
-}
-
 fn err(e: Error) -> Option<()>
 {
     println!("{}", e);
