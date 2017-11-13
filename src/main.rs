@@ -1042,7 +1042,7 @@ fn pprint(x: *const K) -> String
         s.push('b');}
     fn r4(s: &mut String, x: &[i8]) {
         s.push_str("0x"); for b in x {
-            s.push(b"0123456789abcdef"[((*b as u8)<<4) as usize] as char);
+            s.push(b"0123456789abcdef"[(((*b as u8)>>4)) as usize] as char);
             s.push(b"0123456789abcdef"[((*b as u8)&15) as usize] as char);}}
     fn r12(s:&mut String,x:&[i32]){
         for d in x{s.push_str(dfmt(*d).as_ref());s.push_str(" ");}
