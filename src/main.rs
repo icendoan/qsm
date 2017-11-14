@@ -10,6 +10,7 @@ use std::io::{self, Write, BufRead, BufReader, Read};
 
 const K_VOID: *const K = 0 as *const K;
 type S=*const libc::c_char;
+type K=*const K0;
 // this shouldn't be sized
 // but right now rust untagged unions cannot have unsized members
 #[repr(C)]
@@ -30,12 +31,12 @@ union KU
     e: libc::c_float,
     f: libc::c_double,
     s: S,
-    k: *const K,
+    k: K,
     v: KA,
 }
 
 #[repr(C)]
-struct K
+struct K0
 {
     m: libc::c_schar,
     a: libc::c_schar,
@@ -45,7 +46,7 @@ struct K
     data: KU,
 }
 
-impl fmt::Debug for K
+impl fmt::Debug for K0
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result
     {
@@ -64,8 +65,10 @@ impl fmt::Debug for K
 extern "C" {
     fn khp(addr: S, port: i32) -> i32;
     fn khpu(addr: S, port: i32, auth: S) -> i32;
-    fn k(hande: i32, query: S, ...) -> *const K;
-    fn r0(x: *const K);
+    fn k(hande: i32, query: S, ...) ->K;
+    fn ktn(t:i8,n:i64) ->K;
+    fn jv(x:*const K,y:K)->K;
+    fn r0(x:K);
     fn kclose(handle: i32);
 }
 
@@ -220,7 +223,7 @@ impl Server
         Ok(())
     }
 
-    fn sync(&mut self, query: String) -> R<*const K>
+    fn sync(&mut self, query: String) -> R<K>
     {
         let h = self.handle.ok_or(Error::NotConnected)?;
         let q = ffi::CString::new(query).map_err(|_| Error::WithMsg("Bad query (string failure)"))?;
@@ -879,12 +882,7 @@ fn action(s: &mut State, a: Action) -> Option<()>
             match server.sync(query)
             {
                 Ok(kptr) =>
-                {
-                    println!("{}", pprint(kptr));
-                    unsafe {
-                        r0(kptr);
-                    }
-                },
+                    println!("{}",pprint(kptr,settings.lines,settings.cols)),
                 Err(e) =>
                 {
                     err(e);
@@ -1017,7 +1015,7 @@ fn action(s: &mut State, a: Action) -> Option<()>
     }
 }
 
-unsafe fn as_vector<'a, T: 'a>(x: *const K) -> &'a [T]
+unsafe fn as_vector<'a, T: 'a>(x: K) -> &'a [T]
 {
     let len = (*x).data.v.n as usize;
     let ptr = (*x).data.v.g0.as_ptr() as *const T;
@@ -1025,12 +1023,12 @@ unsafe fn as_vector<'a, T: 'a>(x: *const K) -> &'a [T]
     slice::from_raw_parts(ptr, len)
 }
 
-unsafe fn get<'a, T: 'a>(x: *const K, n: usize) -> &'a T
+unsafe fn get<'a, T: 'a>(x: K, n: usize) -> &'a T
 {
     &as_vector(x)[n]
 }
 
-fn pprint(x: *const K) -> String
+fn pprint(x:K,lines:usize,cols:usize) -> String
 {
     use chrono::{TimeZone,Datelike,Timelike};
     fn js<'a, T:'a+ToString>(s:&mut String, x: &'a [T], j: &str) {
@@ -1065,10 +1063,10 @@ fn pprint(x: *const K) -> String
     fn sym(x: S) -> &'static str {
         let cstr = unsafe { ffi::CStr::from_ptr(x) };
         cstr.to_str().unwrap()}
-    fn string(x: *const K) -> &'static str {
+    fn string(x: K) -> &'static str {
         unsafe {let bytes = as_vector::<u8>(x);
             str::from_utf8_unchecked(bytes)}}
-    fn r0(s:&mut String,x:*const K){
+    fn r0(s:&mut String,x:K){
         unsafe{match (*x).t{
             -128=>s.push_str(&format!("'{}",sym((*x).data.s))),
             -12=>s.push_str(&pfmt((*x).data.j)),
@@ -1082,7 +1080,7 @@ fn pprint(x: *const K) -> String
             -5=>s.push_str(&format!("{}",(*x).data.h)),
             -4=>s.push_str(&format!("0x{:x}",(*x).data.g)),
             -1=>s.push_str(&format!("{}b",if 0==(*x).data.g{0}else{1})),
-            0=>{s.push('(');for k in as_vector::<*const K>(x){
+            0=>{s.push('(');for k in as_vector::<K>(x){
                     r0(s,*k);s.push(';');}s.pop();s.push(')');},
             1=>r1(s,as_vector::<i8>(x)),
             4=>r4(s,as_vector::<i8>(x)),
@@ -1099,20 +1097,70 @@ fn pprint(x: *const K) -> String
             12=>{s.push('(');for p in as_vector::<i64>(x)
                  {s.push_str(pfmt(*p).as_ref());s.push(';');}
                  s.pop();s.push(')');},
-            98=>t0(s,*get::<*const K>((*x).data.k,0),
-                   *get::<*const K>((*x).data.k,1)),
-            99=>d0(s,*get::<*const K>(x,0),*get::<*const K>(x,1)),
+            98=>t0(s,*get::<K>((*x).data.k,0),
+                   *get::<K>((*x).data.k,1)),
+            99=>d0(s,*get::<K>(x,0),*get::<K>(x,1)),
             _=>panic!("nyi")
         }};}
-    fn t0(s:&mut String,n:*const K,c:*const K)
+    fn t0(s:&mut String,n:K,c:K)
     {unsafe{s.push('+');for p in as_vector::<S>(n)
             {s.push('`');s.push_str(sym(*p));}
         s.push('!');r0(s,c);}}
-    fn d0(s:&mut String,k:*const K,v:*const K){unsafe{
+    fn d0(s:&mut String,k:K,v:K){unsafe{
         r0(s,k);s.push('!');r0(s,v);}}
+    fn t1(s:&mut String,n:K,c:K,k:usize,lines:usize,cols:usize){unsafe{
+        use std::cmp::max;
+        let mut m=0;let mut v=Vec::new();let mut a=Vec::new();
+        for (c,d) in as_vector::<S>(n).iter().zip(as_vector::<K>(c).iter()){
+            let mut cl=Vec::new();let cn=sym(*c).to_owned();
+            a.push(cn.len());cl.push(cn);match(**d).t{
+                1=>for b in as_vector::<i8>(*d)
+                {cl.push(format!("{}b",if *b==0{0}else{1}));},
+                4=>for b in as_vector::<i8>(*d){cl.push(format!("{:x}",*b));},
+                5=>for b in as_vector::<i16>(*d){cl.push(format!("{}",*b));},
+                6=>for b in as_vector::<i32>(*d){cl.push(format!("{}",*b));},
+                7=>for b in as_vector::<i64>(*d){cl.push(format!("{}",*b));},
+                8=>for b in as_vector::<f32>(*d){cl.push(format!("{}",*b));},
+                9=>for b in as_vector::<f64>(*d){cl.push(format!("{}",*b));},
+                10=>for b in as_vector::<S>(*d){cl.push(sym(*b).to_owned());},
+                11=>for b in as_vector::<u8>(*d)
+                {cl.push(format!("{}",*b as char));},
+                12=>for b in as_vector::<i64>(*d){cl.push(pfmt(*b));},
+                14=>for b in as_vector::<i32>(*d){cl.push(dfmt(*b));},
+                0=>for b in as_vector::<K>(*d)
+                {let mut t=String::new();r0(&mut t,*b);cl.push(t);}
+                t=>{s.clear();s.push_str(&format!("Cannot print type {}", t));
+                    return;}}
+                v.push(cl);}
+        let sz=max(a.iter().sum(),cols);
+        for(l,c)in a.iter_mut().zip(v.iter()){for s in c{*l=max(*l,c.len());}}
+        for(i,(c,l))in v.iter().zip(a.iter()).enumerate(){
+            for(j,x)in c.iter().enumerate(){
+                if (j == 1) {
+                    for ch in 0..sz {
+                    }
+                }
+        }}}}
+    fn d1(s:&mut String,k:K,v:K,lines:usize,cols:usize){unsafe{
+
+    }}
+    fn t2(s:&mut String,l:K,r:K,lines:usize,cols:usize){unsafe{
+        let k=as_vector::<S>(*get::<K>((*l).data.k,0)).len();
+        let c=jv(get::<K>((*l).data.k,0),*get::<K>((*r).data.k,1));
+        let v=jv(get::<K>((*l).data.k,1),*get::<K>((*r).data.k,1));
+        t1(s,c,v,k,lines,cols);}}
     if x.is_null() { return "nullptr".to_owned() }
     let mut s=String::new();
-    unsafe{match (*x).t{_=>r0(&mut s,x)}}
+    unsafe{match (*x).t{
+        0=>{let mut ls=0;for k in as_vector::<K>(x)
+            {r0(&mut s,*k);s.truncate(cols*(ls+1));ls+=1;
+             s.push('\n');}s.pop();},
+        98=>t1(&mut s,*get::<K>((*x).data.k,0),
+               *get::<K>((*x).data.k,1),0,lines,cols),
+        99=>{let k=*get::<K>(x,0);let v=*get::<K>(x,1);
+             if((*k).t==98)&&(*v).t==98{t2(&mut s,k,v,lines,cols)}
+             else{d1(&mut s,k,v,lines,cols)}},
+        _=>{r0(&mut s,x);s.truncate(cols);}}}
     s
 }
 fn err(e: Error) -> Option<()>
