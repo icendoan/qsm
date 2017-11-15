@@ -1,5 +1,4 @@
 #![feature(untagged_unions, box_syntax, box_patterns)]
-#![allow(unused)]
 extern crate libc;
 extern crate chrono;
 use std::{str, env, fs, ffi, slice};
@@ -66,7 +65,6 @@ extern "C" {
     fn khp(addr: S, port: i32) -> i32;
     fn khpu(addr: S, port: i32, auth: S) -> i32;
     fn k(hande: i32, query: S, ...) ->K;
-    fn ktn(t:i8,n:i64) ->K;
     fn jv(x:*const K,y:K)->K;
     fn r0(x:K);
     fn kclose(handle: i32);
@@ -564,6 +562,20 @@ impl<'a> Action<'a>
                     ("async", "false") => s.async = Some(false),
                     ("sync", "true") => s.async = Some(false),
                     ("sync", "false") => s.async = Some(true),
+                    ("cols", n) =>
+                    {
+                        s.cols = n.parse()
+                            .map_err(|_| {
+                                Error::Parse(Some("failed parsing number"))
+                            })?
+                    },
+                    ("lines", n) =>
+                    {
+                        s.lines = n.parse()
+                            .map_err(|_| {
+                                Error::Parse(Some("failed parsing number"))
+                            })?
+                    },
                     (_, _) =>
                     {
                         return Err(Error::Parse(Some("Unrecognised setting.")));
@@ -1066,7 +1078,7 @@ fn pprint(x:K,lines:usize,cols:usize) -> String
     fn string(x: K) -> &'static str {
         unsafe {let bytes = as_vector::<u8>(x);
             str::from_utf8_unchecked(bytes)}}
-    fn r0(s:&mut String,x:K){
+    fn p0(s:&mut String,x:K){
         unsafe{match (*x).t{
             -128=>s.push_str(&format!("'{}",sym((*x).data.s))),
             -12=>s.push_str(&pfmt((*x).data.j)),
@@ -1081,7 +1093,7 @@ fn pprint(x:K,lines:usize,cols:usize) -> String
             -4=>s.push_str(&format!("0x{:x}",(*x).data.g)),
             -1=>s.push_str(&format!("{}b",if 0==(*x).data.g{0}else{1})),
             0=>{s.push('(');for k in as_vector::<K>(x){
-                    r0(s,*k);s.push(';');}s.pop();s.push(')');},
+                    p0(s,*k);s.push(';');}s.pop();s.push(')');},
             1=>r1(s,as_vector::<i8>(x)),
             4=>r4(s,as_vector::<i8>(x)),
             5=>js(s,as_vector::<i16>(x)," "),
@@ -1089,7 +1101,7 @@ fn pprint(x:K,lines:usize,cols:usize) -> String
             7=>js(s,as_vector::<i64>(x)," "),
             8=>js(s,as_vector::<f32>(x)," "),
             9=>js(s,as_vector::<f64>(x)," "),
-            10=>s.push_str(string(x)),
+            10=>{s.push('"');s.push_str(string(x));s.push('"');},
             11=>for p in as_vector::<S>(x){s.push('`');s.push_str(sym(*p));},
             14=>{s.push('(');for d in as_vector::<i32>(x)
                  {s.push_str(dfmt(*d).as_ref());s.push(';');}
@@ -1105,12 +1117,10 @@ fn pprint(x:K,lines:usize,cols:usize) -> String
     fn t0(s:&mut String,n:K,c:K)
     {unsafe{s.push('+');for p in as_vector::<S>(n)
             {s.push('`');s.push_str(sym(*p));}
-        s.push('!');r0(s,c);}}
-    fn d0(s:&mut String,k:K,v:K){unsafe{
-        r0(s,k);s.push('!');r0(s,v);}}
+        s.push('!');p0(s,c);}}
+    fn d0(s:&mut String,k:K,v:K){p0(s,k);s.push('!');p0(s,v);}
     fn t1(s:&mut String,n:K,c:K,k:usize,lines:usize,cols:usize){unsafe{
-        use std::cmp::max;
-        let mut m=0;let mut v=Vec::new();let mut a=Vec::new();
+        use std::cmp::{min,max};let mut v=Vec::new();let mut a=Vec::new();
         for (c,d) in as_vector::<S>(n).iter().zip(as_vector::<K>(c).iter()){
             let mut cl=Vec::new();let cn=sym(*c).to_owned();
             a.push(cn.len());cl.push(cn);match(**d).t{
@@ -1124,43 +1134,151 @@ fn pprint(x:K,lines:usize,cols:usize) -> String
                 9=>for b in as_vector::<f64>(*d){cl.push(format!("{}",*b));},
                 10=>for b in as_vector::<S>(*d){cl.push(sym(*b).to_owned());},
                 11=>for b in as_vector::<u8>(*d)
-                {cl.push(format!("{}",*b as char));},
+                    {cl.push(format!("{}",*b as char));},
                 12=>for b in as_vector::<i64>(*d){cl.push(pfmt(*b));},
                 14=>for b in as_vector::<i32>(*d){cl.push(dfmt(*b));},
                 0=>for b in as_vector::<K>(*d)
-                {let mut t=String::new();r0(&mut t,*b);cl.push(t);}
+                   {let mut t=String::new();p0(&mut t,*b);cl.push(t);}
                 t=>{s.clear();s.push_str(&format!("Cannot print type {}", t));
                     return;}}
                 v.push(cl);}
-        let sz=max(a.iter().sum(),cols);
-        for(l,c)in a.iter_mut().zip(v.iter()){for s in c{*l=max(*l,c.len());}}
-        for(i,(c,l))in v.iter().zip(a.iter()).enumerate(){
-            for(j,x)in c.iter().enumerate(){
-                if (j == 1) {
-                    for ch in 0..sz {
-                    }
-                }
-        }}}}
-    fn d1(s:&mut String,k:K,v:K,lines:usize,cols:usize){unsafe{
+        for(l,c)in a.iter_mut().zip(v.iter()){for s in c{*l=max(*l,1+s.len());}}
+        let num_lines=v.first().map(Vec::len).unwrap_or(0);
 
+        let mut sz=a.iter().sum(); if k != 0 { sz += 2; }
+
+        let iter:Vec<_>=v.into_iter()
+            .map(|x| box x.into_iter() as Box<Iterator<Item=String>>)
+            .collect();
+
+        let num_cols = a.len();
+        let key_col = a.iter().take(k).sum();
+        let mut current_line = String::new();
+        for (line, column, value, alignment) in round_robin(iter)
+            .zip(a.iter().cycle())
+            .enumerate()
+            .take(num_cols * min(2 + num_lines, lines))
+            .map(|(x,(y,a))| (x / num_cols, x % num_cols, y, a)) {
+
+                if column == 0 && line > 0 {
+                    if current_line.len() > cols {
+                        current_line.truncate(cols - 2);
+                        current_line.push_str("..");
+                    }
+                    current_line.push('\n');
+                    s.push_str(&current_line);
+                    current_line.clear();
+                }
+
+                if line == 1 && column == 0 {
+
+                    for i in 0..min(sz, cols - 2) {
+                        if k != 0 {
+                            if i == key_col {
+                                s.push('|');
+                            } else if i == key_col + 1 {
+                                s.push(' ');
+                            } else {
+                                s.push('-');
+                            }
+                        } else {
+                            s.push('-');
+                        }
+                    }
+                    if sz > cols {
+                        s.push_str("..");
+                    }
+                    s.push('\n');
+
+                }
+
+                if k != 0 && column == k {
+                    current_line.push_str("| ");
+                }
+
+                let padding = alignment - value.len();
+                current_line.push_str(&value);
+                for _ in 0..padding {
+                    current_line.push(' ');
+                }
+            }
+        if current_line.len() > cols {
+            current_line.truncate(cols - 2);
+            current_line.push_str("..");
+        }
+        current_line.push('\n');
+        s.push_str(&current_line);
+        current_line.clear();
+        }}
+    fn d1(s:&mut String,k:K,v:K,lines:usize,cols:usize){unsafe{
+        let mut ks=Vec::new();let mut vs=Vec::new();
+        match(*k).t{
+            1=>for b in as_vector::<i8>(k)
+            {ks.push(format!("{}",if*b==0{0}else{1}))},
+            4=>for b in as_vector::<i8>(k){ks.push(format!("{:x}",*b))},
+            5=>for b in as_vector::<i16>(k){ks.push(format!("{}",*b));},
+            6=>for b in as_vector::<i32>(k){ks.push(format!("{}",*b));},
+            7=>for b in as_vector::<i64>(k){ks.push(format!("{}",*b));},
+            8=>for b in as_vector::<f32>(k){ks.push(format!("{}",*b));},
+            9=>for b in as_vector::<f64>(k){ks.push(format!("{}",*b));},
+            10=>for b in as_vector::<S>(k){ks.push(sym(*b).to_owned());},
+            11=>for b in as_vector::<u8>(k)
+            {ks.push(format!("{}",*b as char));},
+            12=>for b in as_vector::<i64>(k){ks.push(pfmt(*b));},
+            14=>for b in as_vector::<i32>(k){ks.push(dfmt(*b));},
+            0=>for b in as_vector::<K>(k)
+            {let mut t=String::new();p0(&mut t,*b);ks.push(t);}
+            t=>{s.clear();s.push_str(&format!("Cannot print type {}", t));
+                return;}}
+        match(*v).t{
+            1=>for b in as_vector::<i8>(v)
+            {vs.push(format!("{}",if*b==0{0}else{1}))},
+            4=>for b in as_vector::<i8>(v){vs.push(format!("{:x}",*b))},
+            5=>for b in as_vector::<i16>(v){vs.push(format!("{}",*b));},
+            6=>for b in as_vector::<i32>(v){vs.push(format!("{}",*b));},
+            7=>for b in as_vector::<i64>(v){vs.push(format!("{}",*b));},
+            8=>for b in as_vector::<f32>(v){vs.push(format!("{}",*b));},
+            9=>for b in as_vector::<f64>(v){vs.push(format!("{}",*b));},
+            10=>for b in as_vector::<S>(v){vs.push(sym(*b).to_owned());},
+            11=>for b in as_vector::<u8>(v)
+            {vs.push(format!("{}",*b as char));},
+            12=>for b in as_vector::<i64>(v){vs.push(pfmt(*b));},
+            14=>for b in as_vector::<i32>(v){vs.push(dfmt(*b));},
+            0=>for b in as_vector::<K>(v)
+            {let mut t=String::new();p0(&mut t,*b);vs.push(t);}
+            t=>{s.clear();s.push_str(&format!("Cannot print type {}", t));
+                return;}}
+        for (i, (k,v)) in ks.iter().zip(vs.iter()).enumerate().take(lines) {
+            s.push_str(k);
+            s.push_str("| ");
+            s.push_str(v);
+            if s.len() > (i+1)*cols {
+                s.truncate((i+1)*cols-2);
+                s.push_str("..")
+            }
+            s.push('\n');
+        }
     }}
     fn t2(s:&mut String,l:K,r:K,lines:usize,cols:usize){unsafe{
         let k=as_vector::<S>(*get::<K>((*l).data.k,0)).len();
-        let c=jv(get::<K>((*l).data.k,0),*get::<K>((*r).data.k,1));
+        let c=jv(get::<K>((*l).data.k,0),*get::<K>((*r).data.k,0));
         let v=jv(get::<K>((*l).data.k,1),*get::<K>((*r).data.k,1));
-        t1(s,c,v,k,lines,cols);}}
+        t1(s,c,v,k,lines,cols);r0(c);r0(v);}}
     if x.is_null() { return "nullptr".to_owned() }
     let mut s=String::new();
     unsafe{match (*x).t{
         0=>{let mut ls=0;for k in as_vector::<K>(x)
-            {r0(&mut s,*k);s.truncate(cols*(ls+1));ls+=1;
-             s.push('\n');}s.pop();},
-        98=>t1(&mut s,*get::<K>((*x).data.k,0),
-               *get::<K>((*x).data.k,1),0,lines,cols),
+            {p0(&mut s,*k);s.truncate(cols*(ls+1));ls+=1;
+             s.push('\n');}s.pop();r0(x);},
+        10=>return string(x).to_owned(),
+        14=>r14(&mut s,as_vector::<i64>(x)),
+        12=>r12(&mut s,as_vector::<i32>(x)),
+        98=>{t1(&mut s,*get::<K>((*x).data.k,0),
+                *get::<K>((*x).data.k,1),0,lines,cols);r0(x);},
         99=>{let k=*get::<K>(x,0);let v=*get::<K>(x,1);
              if((*k).t==98)&&(*v).t==98{t2(&mut s,k,v,lines,cols)}
-             else{d1(&mut s,k,v,lines,cols)}},
-        _=>{r0(&mut s,x);s.truncate(cols);}}}
+             else{d1(&mut s,k,v,lines,cols);r0(x);}},
+        _=>{p0(&mut s,x);s.truncate(cols);r0(x);}}}
     s
 }
 fn err(e: Error) -> Option<()>
@@ -1190,3 +1308,19 @@ trait IterE: Iterator
 }
 
 impl<T: Iterator> IterE for T {}
+struct RoundRobin<T>(Vec<Box<Iterator<Item=T>>>, usize);
+fn round_robin<T>(v: Vec<Box<Iterator<Item=T>>>) -> RoundRobin<T> {
+    RoundRobin(v, 0)
+}
+impl <T> Iterator for RoundRobin<T> {
+    type Item = T;
+    fn next(&mut self) -> Option<T> {
+        let r = unsafe { self.0.get_unchecked_mut(self.1).next() };
+
+        if r.is_some() {
+            self.1 = (self.1 + 1) % self.0.len();
+        }
+
+        r
+    }
+}
