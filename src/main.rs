@@ -1061,17 +1061,24 @@ fn pprint(x:K,lines:usize,cols:usize) -> String
         for p in x{s.push_str(pfmt(*p).as_ref());s.push_str(" ");}
         let n=s.len()-" ".len();s.truncate(n);}
     fn pfmt(x:i64)->String {
-        let d=((x/8.64e13f64 as i64)+10957)*(8.64e4f64 as i64);
-        let s=(x-d)/1e9f32 as i64;
-        let n=((x-s)%1e9f32 as i64)as u32;
+        let d=(x/8.64e13f64 as i64+10957)*(8.64e4f64 as i64);
+        let s=(x%8.64e13 as i64)/1e9 as i64;
+        let n=(x%1e9f32 as i64)as u32;
         let t=chrono::Utc.timestamp(d+s,n);
-        format!("{}.{}.{}D{}:{}:{}.{}",t.year(),t.month(),t.day(),
-                t.hour(),t.minute(),t.second(),t.nanosecond())}
+        format!("{}.{}{}.{}{}D{}{}:{}{}:{}{}.{}",t.year(),
+                if t.month() < 10 { "0" } else { "" }, t.month(),
+                if t.day() < 10 { "0" } else { "" }, t.day(),
+                if t.hour() < 10 { "0" } else { "" }, t.hour(),
+                if t.minute() < 10 { "0" } else { "" }, t.minute(),
+                if t.second() < 10 { "0" } else { "" }, t.second(),
+                t.nanosecond())}
     fn dfmt(x:i32)->String{
         use std::ops::Add;
         let d=chrono::NaiveDate::from_ymd(2000,1,1)
             .add(chrono::Duration::days(x as i64));
-        format!("{}.{}.{}",d.year(),d.month(),d.day())}
+        format!("{}.{}{}.{}{}",d.year(),
+                if d.month() < 10 { "0"}else{""}, d.month(),
+                if d.day() < 10 { "0"}else{""}, d.day())}
     fn sym(x: S) -> &'static str {
         let cstr = unsafe { ffi::CStr::from_ptr(x) };
         cstr.to_str().unwrap()}
@@ -1112,7 +1119,9 @@ fn pprint(x:K,lines:usize,cols:usize) -> String
             98=>t0(s,*get::<K>((*x).data.k,0),
                    *get::<K>((*x).data.k,1)),
             99=>d0(s,*get::<K>(x,0),*get::<K>(x,1)),
-            _=>panic!("nyi")
+            100=>s.push_str(string(x)),
+            101=>s.push_str("::"),
+            t=>{s.clear();s.push_str(&format!("Cannot pprint type {}",t));}
         }};}
     fn t0(s:&mut String,n:K,c:K)
     {unsafe{s.push('+');for p in as_vector::<S>(n)
@@ -1132,8 +1141,8 @@ fn pprint(x:K,lines:usize,cols:usize) -> String
                 7=>for b in as_vector::<i64>(*d){cl.push(format!("{}",*b));},
                 8=>for b in as_vector::<f32>(*d){cl.push(format!("{}",*b));},
                 9=>for b in as_vector::<f64>(*d){cl.push(format!("{}",*b));},
-                10=>for b in as_vector::<S>(*d){cl.push(sym(*b).to_owned());},
-                11=>for b in as_vector::<u8>(*d)
+                11=>for b in as_vector::<S>(*d){cl.push(sym(*b).to_owned());},
+                10=>for b in as_vector::<u8>(*d)
                     {cl.push(format!("{}",*b as char));},
                 12=>for b in as_vector::<i64>(*d){cl.push(pfmt(*b));},
                 14=>for b in as_vector::<i32>(*d){cl.push(dfmt(*b));},
@@ -1209,6 +1218,7 @@ fn pprint(x:K,lines:usize,cols:usize) -> String
         current_line.push('\n');
         s.push_str(&current_line);
         current_line.clear();
+        if num_lines > lines { s.push_str("..\n"); }
         }}
     fn d1(s:&mut String,k:K,v:K,lines:usize,cols:usize){unsafe{
         let mut ks=Vec::new();let mut vs=Vec::new();
@@ -1221,8 +1231,8 @@ fn pprint(x:K,lines:usize,cols:usize) -> String
             7=>for b in as_vector::<i64>(k){ks.push(format!("{}",*b));},
             8=>for b in as_vector::<f32>(k){ks.push(format!("{}",*b));},
             9=>for b in as_vector::<f64>(k){ks.push(format!("{}",*b));},
-            10=>for b in as_vector::<S>(k){ks.push(sym(*b).to_owned());},
-            11=>for b in as_vector::<u8>(k)
+            11=>for b in as_vector::<S>(k){ks.push(sym(*b).to_owned());},
+            10=>for b in as_vector::<u8>(k)
             {ks.push(format!("{}",*b as char));},
             12=>for b in as_vector::<i64>(k){ks.push(pfmt(*b));},
             14=>for b in as_vector::<i32>(k){ks.push(dfmt(*b));},
@@ -1239,8 +1249,8 @@ fn pprint(x:K,lines:usize,cols:usize) -> String
             7=>for b in as_vector::<i64>(v){vs.push(format!("{}",*b));},
             8=>for b in as_vector::<f32>(v){vs.push(format!("{}",*b));},
             9=>for b in as_vector::<f64>(v){vs.push(format!("{}",*b));},
-            10=>for b in as_vector::<S>(v){vs.push(sym(*b).to_owned());},
-            11=>for b in as_vector::<u8>(v)
+            11=>for b in as_vector::<S>(v){vs.push(sym(*b).to_owned());},
+            10=>for b in as_vector::<u8>(v)
             {vs.push(format!("{}",*b as char));},
             12=>for b in as_vector::<i64>(v){vs.push(pfmt(*b));},
             14=>for b in as_vector::<i32>(v){vs.push(dfmt(*b));},
