@@ -1171,7 +1171,7 @@ fn pprint(x:K,lines:usize,cols:usize) -> String
 
                 if column == 0 && line > 0 {
                     if current_line.len() > cols {
-                        current_line.truncate(cols - 2);
+                        current_line.truncate(cols - 1);
                         current_line.push_str("..");
                     }
                     current_line.push('\n');
@@ -1212,7 +1212,7 @@ fn pprint(x:K,lines:usize,cols:usize) -> String
                 }
             }
         if current_line.len() > cols {
-            current_line.truncate(cols - 2);
+            current_line.truncate(cols - 1);
             current_line.push_str("..");
         }
         current_line.push('\n');
