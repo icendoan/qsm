@@ -1066,11 +1066,9 @@ fn pprint(x:K,lines:usize,cols:usize) -> String
         let s=(x%8.64e13 as i64)/1e9 as i64;
         let n=(x%1e9f32 as i64)as u32;
         let t=chrono::Utc.timestamp(d+s,n);
-        let np=(max(t.nanosecond(),1) as f64)
-                  .log(10f64).floor();
-        println!("np:{}",np);
         let np:String=repeat("0")
-            .take(8-(np as usize))
+            .take(8-((max(t.nanosecond(),1) as f64)
+                  .log(10f64).floor() as usize))
             .collect();
         format!("{}.{}{}.{}{}D{}{}:{}{}:{}{}.{}{}",t.year(),
                 if t.month() < 10 { "0" } else { "" }, t.month(),
