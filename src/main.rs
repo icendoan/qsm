@@ -1061,17 +1061,24 @@ fn pprint(x:K,lines:usize,cols:usize) -> String
         for p in x{s.push_str(pfmt(*p).as_ref());s.push_str(" ");}
         let n=s.len()-" ".len();s.truncate(n);}
     fn pfmt(x:i64)->String {
+        use std::iter::repeat;use std::cmp::max;
         let d=(x/8.64e13f64 as i64+10957)*(8.64e4f64 as i64);
         let s=(x%8.64e13 as i64)/1e9 as i64;
         let n=(x%1e9f32 as i64)as u32;
         let t=chrono::Utc.timestamp(d+s,n);
-        format!("{}.{}{}.{}{}D{}{}:{}{}:{}{}.{}",t.year(),
+        let np=(max(t.nanosecond(),1) as f64)
+                  .log(10f64).floor();
+        println!("np:{}",np);
+        let np:String=repeat("0")
+            .take(8-(np as usize))
+            .collect();
+        format!("{}.{}{}.{}{}D{}{}:{}{}:{}{}.{}{}",t.year(),
                 if t.month() < 10 { "0" } else { "" }, t.month(),
                 if t.day() < 10 { "0" } else { "" }, t.day(),
                 if t.hour() < 10 { "0" } else { "" }, t.hour(),
                 if t.minute() < 10 { "0" } else { "" }, t.minute(),
                 if t.second() < 10 { "0" } else { "" }, t.second(),
-                t.nanosecond())}
+                np,t.nanosecond())}
     fn dfmt(x:i32)->String{
         use std::ops::Add;
         let d=chrono::NaiveDate::from_ymd(2000,1,1)
@@ -1108,7 +1115,9 @@ fn pprint(x:K,lines:usize,cols:usize) -> String
             7=>js(s,as_vector::<i64>(x)," "),
             8=>js(s,as_vector::<f32>(x)," "),
             9=>js(s,as_vector::<f64>(x)," "),
-            10=>{s.push('"');s.push_str(string(x));s.push('"');},
+            10=>{s.push('"');
+                 let v=string(x).replace('\n', r"\n");
+                 s.push_str(&v);s.push('"');},
             11=>for p in as_vector::<S>(x){s.push('`');s.push_str(sym(*p));},
             14=>{s.push('(');for d in as_vector::<i32>(x)
                  {s.push_str(dfmt(*d).as_ref());s.push(';');}
