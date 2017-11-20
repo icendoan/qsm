@@ -1284,12 +1284,12 @@ fn pprint(x:K,lines:usize,cols:usize) -> String
     if x.is_null() { return "nullptr".to_owned() }
     let mut s=String::new();
     unsafe{match (*x).t{
-        0=>{let mut ls=0;for k in as_vector::<K>(x)
-            {p0(&mut s,*k);s.truncate(cols*(ls+1));ls+=1;
-             s.push('\n');}s.pop();r0(x);},
-        10=>return string(x).to_owned(),
-        14=>r14(&mut s,as_vector::<i64>(x)),
-        12=>r12(&mut s,as_vector::<i32>(x)),
+        0=>{let mut t=String::new();for k in as_vector::<K>(x)
+            .iter().take(lines){p0(&mut t,*k);t.truncate(cols);
+                s.push_str(&t);t.clear();s.push('\n');}r0(x);},
+        10=>{s.push_str(string(x));r0(x);},
+        14=>{r14(&mut s,as_vector::<i64>(x));r0(x);},
+        12=>{r12(&mut s,as_vector::<i32>(x));r0(x);},
         98=>{t1(&mut s,*get::<K>((*x).data.k,0),
                 *get::<K>((*x).data.k,1),0,lines,cols);r0(x);},
         99=>{let k=*get::<K>(x,0);let v=*get::<K>(x,1);
