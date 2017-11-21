@@ -646,6 +646,12 @@ impl<'a> Action<'a>
                 s.mode = Some(Mode::Raw);
                 query(&t[2..].trim(), s)
             },
+            t if t.starts_with("k)") =>
+            {
+                let mut s = Settings::unset();
+                s.mode=Some(Mode::K);
+                query(&t[2..].trim(), s)
+            },
             t if t.starts_with(r"\") =>
             {
                 let mut s = Settings::unset();
