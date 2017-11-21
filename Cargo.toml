@@ -3,6 +3,9 @@ authors = ["Caleb Quilley <cquilley@tylercapital.co.uk>"]
 name = "qsm"
 version = "1.0.0"
 
+[features]
+emacs = []
+
 [dependencies]
 byteorder = "*"
 chrono = "*"

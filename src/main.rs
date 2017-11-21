@@ -5,7 +5,7 @@ use std::{str, env, fs, ffi, slice};
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::Write as FmtWrite;
-use std::io::{self, Write, BufRead, BufReader, Read};
+use std::io::{self, Write, BufRead, BufReader};
 
 const K_VOID: *const K = 0 as *const K;
 type S=*const libc::c_char;
@@ -71,6 +71,17 @@ extern "C" {
 }
 
 
+#[cfg(feature = "emacs")]
+fn read(lock: &mut io::StdinLock, buf: &mut String) -> io::Result<usize> {
+    use std::io::Read;
+    lock.read_to_string(buf)
+}
+
+#[cfg(not(feature = "emacs"))]
+fn read(lock: &mut io::StdinLock, buf: &mut String) -> io::Result<usize> {
+    lock.read_line(buf)
+}
+
 fn main()
 {
     let mut state = State::new();
@@ -90,7 +101,7 @@ fn main()
 
     loop
     {
-        match lock.read_to_string(&mut input)
+        match read(&mut lock, &mut input)
         {
             Ok(_) =>
             {
@@ -1160,7 +1171,7 @@ fn pprint(x:K,lines:usize,cols:usize) -> String
                 12=>for b in as_vector::<i64>(*d){cl.push(pfmt(*b));},
                 14=>for b in as_vector::<i32>(*d){cl.push(dfmt(*b));},
                 0=>for b in as_vector::<K>(*d)
-                   {let mut t=String::new();p0(&mut t,*b);cl.push(t);}
+                   {let mut t=String::new();p0(&mut t,*b);cl.push(t);},
                 t=>{s.clear();s.push_str(&format!("Cannot print type {}", t));
                     return;}}
                 v.push(cl);}
@@ -1250,7 +1261,7 @@ fn pprint(x:K,lines:usize,cols:usize) -> String
             12=>for b in as_vector::<i64>(k){ks.push(pfmt(*b));},
             14=>for b in as_vector::<i32>(k){ks.push(dfmt(*b));},
             0=>for b in as_vector::<K>(k)
-            {let mut t=String::new();p0(&mut t,*b);ks.push(t);}
+            {let mut t=String::new();p0(&mut t,*b);ks.push(t);},
             t=>{s.clear();s.push_str(&format!("Cannot print type {}", t));
                 return;}}
         match(*v).t{
@@ -1268,7 +1279,7 @@ fn pprint(x:K,lines:usize,cols:usize) -> String
             12=>for b in as_vector::<i64>(v){vs.push(pfmt(*b));},
             14=>for b in as_vector::<i32>(v){vs.push(dfmt(*b));},
             0=>for b in as_vector::<K>(v)
-            {let mut t=String::new();p0(&mut t,*b);vs.push(t);}
+            {let mut t=String::new();p0(&mut t,*b);vs.push(t);},
             t=>{s.clear();s.push_str(&format!("Cannot print type {}", t));
                 return;}}
         for (i, (k,v)) in ks.iter().zip(vs.iter()).enumerate().take(lines) {
