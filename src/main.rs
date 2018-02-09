@@ -1,4 +1,4 @@
-#![feature(untagged_unions, box_syntax, box_patterns)]
+#![feature(untagged_unions, box_syntax, box_patterns,str_escape)]
 extern crate libc;
 extern crate chrono;
 use std::{str, env, fs, ffi, slice};
@@ -877,8 +877,7 @@ fn action(s: &mut State, a: Action) -> Option<()>
         {
             None | Some(Mode::Q) => format!(".Q.s[({})]", query),
             Some(Mode::K) => format!("k) {}", query),
-            Some(Mode::Backtrace) => format!(".Q.trp[{{.Q.s[({})]}};();{{raze \"'\",(string x),\"\\n\",.Q.sbt y}}]",
-                                             query),
+            Some(Mode::Backtrace)=>format!(".Q.trp[eval;parse raze \"{}\";{{raze\"'\",(string x),\"\\n\",.Q.sbt y}}]",query.escape_default()),
             Some(Mode::Raw) => query.to_owned(),
         };
 
