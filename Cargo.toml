@@ -3,14 +3,13 @@ authors = ["Caleb Quilley <cquilley@tylercapital.co.uk>"]
 name = "qsm"
 version = "1.0.0"
 
+[features]
+emacs = []
+
 [dependencies]
 byteorder = "*"
 chrono = "*"
-clap = "*"
 gnuplot = "*"
 lazy_static = "*"
 libc = "0.2.29"
 regex = "*"
-
-[features]
-emacs = []
