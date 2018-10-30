@@ -13,3 +13,6 @@ gnuplot = "*"
 lazy_static = "*"
 libc = "0.2.29"
 regex = "*"
+
+[profile.release]
+lto = true
