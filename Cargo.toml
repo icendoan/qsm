@@ -1,18 +1,13 @@
 [package]
 authors = ["Caleb Quilley <cquilley@tylercapital.co.uk>"]
 name = "qsm"
-version = "1.0.0"
-
-[features]
-emacs = []
+version = "2.0.0"
 
 [dependencies]
-byteorder = "*"
 chrono = "*"
-gnuplot = "*"
-lazy_static = "*"
 libc = "0.2.29"
-regex = "*"
+
+[profile]
 
 [profile.release]
 lto = true
