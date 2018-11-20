@@ -294,6 +294,11 @@ fn dict(l:usize, c:usize, x:&k::K0)->String {
 fn render(x:P)->String{
     match x {
         P::A(a) => a,
+        P::V(Some(""), Some(""), Some(""), vs) => {
+            let mut s = String::new();
+            for v in vs { write!(&mut s, "{}", render(v)).unwrap() }
+            s
+        }
         P::V(Some(sep), Some(pre), Some(suf), vs) => {
             let mut s = String::new();
             let n = vs.len();
