@@ -1,7 +1,7 @@
 #![feature(nll,untagged_unions)]
 extern crate libc;
 extern crate chrono;
-use std::{ffi,sync,thread,fmt,time,env,iter,fs}; use std::collections::HashMap;
+use std::{ffi,sync,thread,fmt,time,env,iter,fs}; use std::collections::BTreeMap;
 use std::ops::BitOrAssign;
 use std::io::{self,Write,Read,BufRead};
 
@@ -17,11 +17,11 @@ impl From<fmt::Error> for Err { fn from(e:fmt::Error)->Err{ Err::Fmt(e) } }
 
 pub type R<T> = Result<T, Err>;
 
-struct C { s: HashMap<String, S>, c: Option<String>, l: sync::mpsc::Receiver<String>, fmt: (usize, usize) }
+struct C { s: BTreeMap<String, S>, c: Option<String>, l: sync::mpsc::Receiver<String>, fmt: (usize, usize) }
 impl C {
     fn new() -> (C, sync::mpsc::Sender<String>) {
         let (tx, rx) = sync::mpsc::channel();
-        (C { s: HashMap::new(), c: None, l: rx, fmt: (25, 80) }, tx)
+        (C { s: BTreeMap::new(), c: None, l: rx, fmt: (25, 80) }, tx)
     }
 
     fn exec(&mut self) -> CRes {
