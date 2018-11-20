@@ -1,9 +1,9 @@
 #![feature(nll,untagged_unions)]
 extern crate libc;
 extern crate chrono;
-use std::{ffi,sync,thread,fmt,time}; use std::collections::HashMap;
+use std::{ffi,sync,thread,fmt,time,env,iter,fs}; use std::collections::HashMap;
 use std::ops::BitOrAssign;
-#[allow(unused)] use std::io::{self,Write,Read,BufRead};
+use std::io::{self,Write,Read,BufRead};
 
 mod k;
 mod s;
@@ -80,12 +80,14 @@ impl C {
                     .ok_or(Err::Err(format!("No such server {}", c)))
                     .and_then(|mut x| x.disconnect())
                     .map(|_| CRes::Upd)
-            } else { Ok(CRes::Upd) } }
+            } else { Ok(CRes::Upd) }
+            }
             Action::Cnn { name: Some(name) } => {
                 if let Some(s) = self.s.get_mut(&name) {
                     s.connect()?; self.c = Some(name); Ok(CRes::Upd) }
                 else {
-                    Err(Err::Err(format!("No such server exists: {}", name))) } }
+                    Err(Err::Err(format!("No such server exists: {}", name))) }
+            }
             Action::Cnn { name: None } => {
                 let c = self.c.as_ref();
                 let s = &mut self.s;
@@ -96,8 +98,40 @@ impl C {
                     Ok(CRes::Upd)
                 }
             },
-            Action::Hlp => { Ok(CRes::Upd) },
-            Action::Lst => { for (k, v) in &self.s { println!("{}: {}", k, v) } Ok(CRes::Upd) }
+            Action::Hlp => {
+                Ok(CRes::Upd)
+            },
+            Action::Lst => {
+                let names = &self.s.keys().cloned().collect::<Vec<_>>();
+                let addrs = &self.s.values().map(|x| x.addr.clone()).collect::<Vec<_>>();
+                let ports = &self.s.values().map(|x| format!("{}",x.port)).collect::<Vec<_>>();
+                let queue = &self.s.values().map(|x| format!("(pnd: {}, rsp: {})", x.queue.len(), x.resp.len())).collect::<Vec<_>>();
+                let state = &self.s.values().map(|x| format!("{:?}", x.state)).collect::<Vec<_>>();
+
+                let nalign = names.iter().map(String::len).max().unwrap_or(1);
+                let aalign = addrs.iter().map(String::len).max().unwrap_or(1);
+                let palign = ports.iter().map(String::len).max().unwrap_or(1);
+                let qalign = queue.iter().map(String::len).max().unwrap_or(1);
+
+                for ((((n, a), p), q), s) in names.into_iter()
+                    .zip(addrs.into_iter())
+                    .zip(ports.into_iter())
+                    .zip(queue.into_iter())
+                    .zip(state.into_iter()) {
+                        println!("{:nalign$} : {:aalign$} {}{} {:qalign$} - {}",
+                                 n,
+                                 a,
+                                 p,
+                                 iter::repeat(' ').take(palign-p.len()).collect::<String>(),
+                                 q,
+                                 s,
+                                 nalign = nalign,
+                                 aalign = aalign,
+                                 qalign = qalign)
+                    }
+
+                Ok(CRes::Upd)
+            }
             Action::Qry { query } => {
                 let c = self.c.as_ref();
                 let s = &mut self.s;
@@ -176,22 +210,44 @@ fn parse(x: String) -> R<Action> {
     }
 }
 
-fn read(tx: sync::mpsc::Sender<String>) {
+fn read(to_eof: bool, tx: sync::mpsc::Sender<String>) {
     let stdin = io::stdin();
     let mut stdin = stdin.lock();
     let mut s = String::new();
 
     loop {
-        stdin.read_to_string(&mut s).unwrap();
-        //stdin.read_line(&mut s).unwrap();
+        if to_eof {
+            stdin.read_to_string(&mut s).unwrap();
+        } else {
+            stdin.read_line(&mut s).unwrap();
+        }
+
         tx.send(s).unwrap();
         s = String::new();
     }
 }
 
 fn main() {
+
+    let to_eof = env::args().any(|x| x == "--eof");
+
     let (mut c, tx) = C::new();
-    thread::spawn(move || read(tx));
+
+    if let Some(home) = env::var_os("HOME") {
+        if let Ok(f) = fs::File::open(format!("{}/.qsm", home.to_str().unwrap())) {
+            let buf = io::BufReader::new(f);
+
+            for l in buf.lines() {
+                if let Ok(line) = l {
+                    if !line.is_empty() {
+                        tx.send(line).unwrap();
+                    }
+                }
+            }
+        }
+    }
+
+    thread::spawn(move || read(to_eof, tx));
     let o = io::stdout();
     let mut o = o.lock();
 
@@ -206,7 +262,7 @@ fn main() {
                 write!(o, "{})", c.c.as_ref().map(AsRef::as_ref).unwrap_or("none"));
                 o.flush().expect("Cannot flush stdout!");
             },
-            CRes::Sleep => thread::sleep(time::Duration::from_millis(100)),
+            CRes::Sleep => thread::sleep(time::Duration::from_millis(1)),
             CRes::Upd => ()
         }
     }

@@ -7,7 +7,7 @@ use k;
 pub use super::{Err, R};
 
 #[derive(PartialEq, Eq, Copy, Clone, Debug)] pub enum SS { Hsk, Rdy, Pnd, Dc }
-pub struct S { addr: String, port: u16, auth: String, stream: Option<net::TcpStream>, resp: VecDeque<k::K>, queue: VecDeque<String>, state: SS }
+pub struct S { pub addr: String, pub port: u16, auth: String, stream: Option<net::TcpStream>, pub resp: VecDeque<k::K>, pub queue: VecDeque<String>, pub state: SS }
 
 macro_rules! assert_state { ($x:expr, $y:expr) => ( if $x != $y.state { return Err(Err::State($x, $y.state)) }) }
 macro_rules! stream { ($x:expr) => (
@@ -32,6 +32,10 @@ impl S {
     }
 
     pub fn connect(&mut self) -> R<()> {
+        if self.state == SS::Rdy {
+            return Ok(())
+        }
+
         let mut stream = net::TcpStream::connect((self.addr.as_ref(), self.port))?;
         stream.set_nonblocking(true)?;
         stream.write(self.auth.as_bytes())?;

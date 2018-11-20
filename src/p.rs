@@ -53,9 +53,9 @@ fn z(x: k::F) -> P {
     let t = Duration::nanoseconds((x.fract() * (Duration::days(1).num_nanoseconds().unwrap() as f64)) as i64);
     P::A(format!("{}", d + t))
 }
-fn n(x: k::J) -> P { P::A(format!("{}",Duration::nanoseconds(x))) }
-fn u(x: k::I) -> P { P::A(format!("{}",Duration::minutes(x as i64))) }
-fn v(x: k::I) -> P { P::A(format!("{}",Duration::seconds(x as i64))) }
+fn n(x: k::J) -> P { P::A(format!("{}", Duration::nanoseconds(x))) }
+fn u(x: k::I) -> P { P::A(format!("{}", NaiveTime::from_hms(0,0,0)+Duration::minutes(x as i64))) }
+fn v(x: k::I) -> P { P::A(format!("{}", NaiveTime::from_hms(0,0,0)+Duration::seconds(x as i64))) }
 fn t(x: k::I) -> P {
     let mm=(x%1000)as u32; let s=(x/1000)as u32; let m=(s/60)as u32; let h=(m/60)as u32;
     if let Some(t) = NaiveTime::from_hms_milli_opt(h%24,m%60,s%60,mm) {P::A(format!("{}",t))} else {P::A(format!("bad t {}",x))} }
@@ -82,7 +82,7 @@ fn prim(x:&k::K0)->P{
         -7=>KA!(x,k::jK),7=>KV!(x,k::J),
         -8=>KA!(x,k::eK),8=>KV!(x,k::E),
         -9=>KA!(x,k::fK),9=>KV!(x,k::F),
-        -10=>KA!(x,|x|k::gK(x)as char),10=>KV!(x,u8,|x:u8|auto(x as char)),
+        -10=>KA!(x,|x|k::gK(x)as char),10=>KV!(x,u8,|x:u8|auto(x as char),"","",""),
         -11=>KA!(x,k::sK,s),11=>KV!(x,k::S,s,"`","`",""),
         -12=>KA!(x,k::jK,p),12=>KV!(x,k::J,p),
         -13=>KA!(x,k::iK,m),13=>KV!(x,k::I,m),
