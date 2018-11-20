@@ -255,6 +255,15 @@ fn main() {
 
     write!(o, "{})", c.c.as_ref().map(AsRef::as_ref).unwrap_or("none"));
     o.flush().expect("Cannot flush stdout!");
+
+    // run through init updates without output
+    loop {
+        match c.exec() {
+            CRes::Exit | CRes::Prompt | CRes::Upd => (),
+            CRes::Sleep => break
+        }
+    }
+
     loop {
         match c.exec() {
             CRes::Exit => break,
