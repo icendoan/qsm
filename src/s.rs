@@ -127,7 +127,6 @@ impl S {
             }
         };
 
-        #[cfg(debug)] println!("recv header: {:?}", x);
         let mul: [i64;4] = [1,256,65536,16777216];
         let len: i64 = if x[0] == 1 {
             x[4..].iter().zip((mul).iter()).map(|(x,y)|(*x as i64)*(*y)).sum()
@@ -137,14 +136,21 @@ impl S {
 
         let b = unsafe { k::ktn(4, len) };
         k::mtk(b)[0..8].copy_from_slice(&x[..]);
-        stream.read_exact(&mut k::mtk(b)[8..])?;
-        #[cfg(debug)] println!("finished reading stream");
+        let mut has_read = 8;
+        loop {
+            match stream.read(&mut k::mtk(b)[has_read..]) {
+                Ok(n) if n + has_read == (len as usize) => break,
+                Ok(n) => has_read += n,
+                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => (),
+                Err(e) => return Err(e.into())
+            }
+        }
 
         let k = unsafe { k::ee(k::d9(b)) };
+        unsafe { k::r0(b) };
         self.resp.push_back(k);
         self.state = SS::Rdy;
 
-        #[cfg(debug)] println!("deserialised");
         Ok(true)
     }
 

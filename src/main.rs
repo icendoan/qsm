@@ -197,7 +197,6 @@ fn parse(x: String) -> R<Action> {
     }
     fn qry(x: &str) -> R<Action> {
 
-        /*
         let mut q = String::from(".Q.trp[eval; parse \"");
         for c in x.chars() {
             match c {
@@ -207,7 +206,6 @@ fn parse(x: String) -> R<Action> {
         }
 
         q.push_str("\"; {[x;y] x , \"\\n\" , .Q.sbt y}]");
-        */
 
         Ok(Action::Qry { query: x.into() })
     }

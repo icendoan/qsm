@@ -11,6 +11,3 @@ libc = "0.2.29"
 
 [profile.release]
 lto = true
-
-[features]
-debug = []
