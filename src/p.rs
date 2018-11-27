@@ -4,6 +4,8 @@ use chrono::{NaiveDate,NaiveTime,Duration};
 use std::{ffi,str,cmp,iter};
 use k;
 
+const N:usize = 1_000;
+
 pub fn pr(l:usize,c:usize,x: k::K) {
 
     print!("\r{:width$}",' ',width=c);
@@ -13,15 +15,15 @@ pub fn pr(l:usize,c:usize,x: k::K) {
 
     match k::t(x) {
         0 => {
-            match prim(x) {
+            match prim(N,x) {
                 P::M(m) => println!("\r{}",join_with("\n",m)),
                 _ => panic!("prim on 0 list returned simple vec or atom")
             }
         },
-        99 => print!("\r{}",dict(l,c,x)),
-        98 => print!("\r{}",tab(l,c,x)),
+        99 => print!("\r{}",dict(N,l,c,x)),
+        98 => print!("\r{}",tab(N,l,c,x)),
         _ => {
-            let s = nest(x);
+            let s = nest(N,x);
             if s.len() > c {
                 println!("\r{}...", &s[..c-3]);
             } else {
@@ -66,33 +68,34 @@ macro_rules! KA {
 }
 
 macro_rules! KV {
-    ($k:expr,$tt:ty) => (P::V(None,None,None,k::tk::<$tt>($k).iter().map(|x|auto(*x)).collect())) ;
-    ($k:expr,$tt:ty,$at:expr) => (P::V(None,None,None,k::tk::<$tt>($k).iter().map(|x|$at(*x)).collect()));
-    ($k:expr,$tt:ty,$at:expr,$sep:expr,$pre:expr,$suf:expr) => (P::V(Some($sep),Some($pre),Some($suf),k::tk::<$tt>($k).iter().map(|x|$at(*x)).collect()))
+    ($k:expr,$num:expr,$tt:ty) => (P::V(None,None,None,k::tk::<$tt>($k).iter().take($num).map(|x|auto(*x)).collect())) ;
+    ($k:expr,$num:expr,$tt:ty,$at:expr) => (P::V(None,None,None,k::tk::<$tt>($k).iter().take($num).map(|x|$at(*x)).collect()));
+    ($k:expr,$num:expr,$tt:ty,$at:expr,$sep:expr,$pre:expr,$suf:expr) =>
+        (P::V(Some($sep),Some($pre),Some($suf),k::tk::<$tt>($k).iter().take($num).map(|x|$at(*x)).collect()))
 }
 
-fn prim(x:&k::K0)->P{
+fn prim(num_items:usize, x:&k::K0)->P{
     match k::t(x) {
-        0 =>P::M(k::tk::<k::K>(x).iter().map(|x|unsafe{prim(&**x)}).collect()),
-        -1=>KA!(x,k::gK,b),1=>KV!(x,u8,b,"","","b"),
-        -2=>guid(k::tk::<u8>(x)),2=>P::V(None,None,None,k::tk::<u8>(x).chunks(16).map(guid).collect()),
-        -4=>KA!(x,k::gK,x0),4=>KV!(x,u8,x0,"","0x",""),
-        -5=>KA!(x,k::hK),5=>KV!(x,k::H),
-        -6=>KA!(x,k::iK),6=>KV!(x,k::I),
-        -7=>KA!(x,k::jK),7=>KV!(x,k::J),
-        -8=>KA!(x,k::eK),8=>KV!(x,k::E),
-        -9=>KA!(x,k::fK),9=>KV!(x,k::F),
-        -10=>KA!(x,|x|k::gK(x)as char),10=>KV!(x,u8,|x:u8|auto(x as char),"","",""),
-        -11=>KA!(x,k::sK,s),11=>KV!(x,k::S,s,"`","`",""),
-        -12=>KA!(x,k::jK,p),12=>KV!(x,k::J,p),
-        -13=>KA!(x,k::iK,m),13=>KV!(x,k::I,m),
-        -14=>KA!(x,k::iK,d),14=>KV!(x,k::I,d),
-        -15=>KA!(x,k::fK,z),15=>KV!(x,k::F,z),
-        -16=>KA!(x,k::jK,n),16=>KV!(x,k::J,n),
-        -17=>KA!(x,k::iK,v),17=>KV!(x,k::I,v),
-        -18=>KA!(x,k::iK,u),18=>KV!(x,k::I,u),
-        -19=>KA!(x,k::iK,t),19=>KV!(x,k::I,t),
-        98=>P::A(nest(x)), 99 => P::A(nest(x)),
+        0 =>P::M(k::tk::<k::K>(x).iter().take(num_items).map(|x|unsafe{prim(num_items, &**x)}).collect()),
+        -1=>KA!(x,k::gK,b),1=>KV!(x,num_items,u8,b,"","","b"),
+        -2=>guid(k::tk::<u8>(x)),2=>P::V(None,None,None,k::tk::<u8>(x).chunks(16).take(num_items).map(guid).collect()),
+        -4=>KA!(x,k::gK,x0),4=>KV!(x,num_items,u8,x0,"","0x",""),
+        -5=>KA!(x,k::hK),5=>KV!(x,num_items,k::H),
+        -6=>KA!(x,k::iK),6=>KV!(x,num_items,k::I),
+        -7=>KA!(x,k::jK),7=>KV!(x,num_items,k::J),
+        -8=>KA!(x,k::eK),8=>KV!(x,num_items,k::E),
+        -9=>KA!(x,k::fK),9=>KV!(x,num_items,k::F),
+        -10=>KA!(x,|x|k::gK(x)as char),10=>KV!(x,num_items,u8,|x:u8|auto(x as char),"","",""),
+        -11=>KA!(x,k::sK,s),11=>KV!(x,num_items,k::S,s,"`","`",""),
+        -12=>KA!(x,k::jK,p),12=>KV!(x,num_items,k::J,p),
+        -13=>KA!(x,k::iK,m),13=>KV!(x,num_items,k::I,m),
+        -14=>KA!(x,k::iK,d),14=>KV!(x,num_items,k::I,d),
+        -15=>KA!(x,k::fK,z),15=>KV!(x,num_items,k::F,z),
+        -16=>KA!(x,k::jK,n),16=>KV!(x,num_items,k::J,n),
+        -17=>KA!(x,k::iK,v),17=>KV!(x,num_items,k::I,v),
+        -18=>KA!(x,k::iK,u),18=>KV!(x,num_items,k::I,u),
+        -19=>KA!(x,k::iK,t),19=>KV!(x,num_items,k::I,t),
+        98=>P::A(nest(num_items,x)), 99 => P::A(nest(num_items,x)),
          x if ((x > -80) && (x < -19)) || ((x > 19) && (x < 80)) => P::A(format!("err: recv type {}, enums unexpected", x)),
         -128 => KA!(x,k::sK,|x| match s(x){P::A(s)=>P::A(format!("'{}",s)),_=>panic!()}),
         100=>P::A(str::from_utf8(k::tk::<u8>(x)).unwrap_or("'utf8").into()),
@@ -101,11 +104,11 @@ fn prim(x:&k::K0)->P{
     }
 }
 
-fn nest(x:&k::K0)->String{
+fn nest(n:usize,x:&k::K0)->String{
     match k::t(x) {
-        98=>format!("+{}",nest(unsafe{&*k::kK(x)})),
-        99=>format!("{}!{}",nest(unsafe{&*k::tk::<k::K>(x)[0]}),nest(unsafe{&*k::tk::<k::K>(x)[1]})),
-        _=> match prim(x) {
+        98=>format!("+{}",nest(n,unsafe{&*k::kK(x)})),
+        99=>format!("{}!{}",nest(n,unsafe{&*k::tk::<k::K>(x)[0]}),nest(n,unsafe{&*k::tk::<k::K>(x)[1]})),
+        _=> match prim(n,x) {
             P::A(x) => x,
             P::V(Some(ds),Some(pre),Some(suf),x) => format!("{}{}{}",pre,join_with(ds,x),suf),
             P::V(_,_,_,x) => join_with(" ",x),
@@ -124,14 +127,14 @@ fn plen(p:&P)->usize{
 }
 
 
-fn tab(l:usize, c:usize, x:&k::K0)->String {
+fn tab(n:usize, l:usize, c:usize, x:&k::K0)->String {
 
-    let cols: Vec<String> = match prim(unsafe { &*k::tk::<k::K>(&*k::kK(x))[0] }) {
+    let cols: Vec<String> = match prim(n, unsafe { &*k::tk::<k::K>(&*k::kK(x))[0] }) {
         P::V(_,_,_,ps) => ps.into_iter().map(|x| match x { P::A(s) => s, _ => panic!() }).collect(),
         _ => panic!()
     };
 
-    let values: Vec<P> = match prim(unsafe { &*k::tk::<k::K>(&*k::kK(x))[1] }) {
+    let values: Vec<P> = match prim(n, unsafe { &*k::tk::<k::K>(&*k::kK(x))[1] }) {
         P::V(_,_,_,ps) => ps,
         P::M(ms) => ms,
         P::A(_) => panic!("unexpected atom in table!")
@@ -222,9 +225,9 @@ fn tab(l:usize, c:usize, x:&k::K0)->String {
     s
 }
 
-fn key(l:usize, c:usize, x:&k::K0,y:&k::K0) -> String {
-    let left = tab(l, c, x);
-    let right = tab(l, c, y);
+fn key(n:usize, l:usize, c:usize, x:&k::K0,y:&k::K0) -> String {
+    let left = tab(n / 2, l, c, x);
+    let right = tab(n / 2, l, c, y);
 
     let mut s = String::with_capacity(l * c);
     let mut ln = String::new();
@@ -248,20 +251,20 @@ fn key(l:usize, c:usize, x:&k::K0,y:&k::K0) -> String {
     s
 }
 
-fn dict(l:usize, c:usize, x:&k::K0)->String {
+fn dict(n:usize, l:usize, c:usize, x:&k::K0)->String {
     let keys = unsafe { &*k::tk::<k::K>(x)[0] };
     let vals = unsafe { &*k::tk::<k::K>(x)[1] };
 
     if (k::t(keys) == 98) && (k::t(vals) == 98) {
-        return key(l, c, keys, vals);
+        return key(n, l, c, keys, vals);
     }
 
-    let keys: Vec<P> = match prim(keys) {
+    let keys: Vec<P> = match prim(n, keys) {
         P::A(_) => panic!("Cannot have atom as dict key"),
         P::M(x) | P::V(_,_,_,x) => x
     };
 
-    let vals: Vec<P> = match prim(vals) {
+    let vals: Vec<P> = match prim(n, vals) {
         P::A(_) => panic!("cannot have atom as dict val"),
         P::M(x) | P::V(_,_,_,x) => x
     };
@@ -303,7 +306,7 @@ fn render(x:P)->String{
             let mut s = String::new();
             let n = vs.len();
             for v in vs {
-                write!(&mut s, "({}{}{}){}", pre, render(v), suf, sep).unwrap();
+                write!(&mut s, "{}{}{}{}", pre, render(v), suf, sep).unwrap();
             }
             if n>0 {s.truncate(s.len()-sep.len())}
             s
@@ -319,7 +322,7 @@ fn join_with(sep: &str, x: Vec<P>) -> String {
     for p in x {
         match p {
             P::A(y) => write!(&mut s, "{}{}", y, sep).unwrap(),
-            P::V(Some(ds), Some(pre), Some(suf), y) => write!(&mut s, "({}{}{}){}", pre, join_with(";",y), suf, ds).unwrap(),
+            P::V(Some(ds), Some(pre), Some(suf), y) => write!(&mut s, "({}{}{}){}", pre, join_with(ds,y), suf, sep).unwrap(),
             P::V(_, _, _, y) => write!(&mut s, "({}){}", join_with(";",y), sep).unwrap(),
             P::M(y) => write!(&mut s, "({}){}", join_with(";",y), sep).unwrap(),
         }

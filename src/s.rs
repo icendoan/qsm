@@ -32,7 +32,7 @@ impl S {
     }
 
     pub fn connect(&mut self) -> R<()> {
-        if self.state == SS::Rdy {
+        if self.state != SS::Dc {
             return Ok(())
         }
 
@@ -127,6 +127,7 @@ impl S {
             }
         };
 
+        #[cfg(debug)] println!("recv header: {:?}", x);
         let mul: [i64;4] = [1,256,65536,16777216];
         let len: i64 = if x[0] == 1 {
             x[4..].iter().zip((mul).iter()).map(|(x,y)|(*x as i64)*(*y)).sum()
@@ -136,37 +137,14 @@ impl S {
 
         let b = unsafe { k::ktn(4, len) };
         k::mtk(b)[0..8].copy_from_slice(&x[..]);
-        match stream.read(&mut k::mtk(b)[8..]) {
-            Ok(n) if (n as i64) == (len - 8) => (),
-            Err(e) => return Err(e.into()),
-            Ok(n) => {
-                self.state = SS::Dc;
-                stream.shutdown(net::Shutdown::Both)?;
-                self.stream = None;
-                return Err(Err::Err(format!("Expected {} bytes, but received {}", len, n)))
-            }
-        }
-
-        let mut v = Vec::new();
-        match stream.read_to_end(&mut v) {
-            Ok(0) => (),
-            Err(e) => {
-                if e.kind() != io::ErrorKind::WouldBlock {
-                    return Err(e.into())
-                }
-            },
-            Ok(n) => {
-                self.state = SS::Dc;
-                stream.shutdown(net::Shutdown::Both)?;
-                self.stream = None;
-                return Err(Err::Err(format!("Expected 0 bytes, but received {}", n)))
-            }
-        }
+        stream.read_exact(&mut k::mtk(b)[8..])?;
+        #[cfg(debug)] println!("finished reading stream");
 
         let k = unsafe { k::ee(k::d9(b)) };
         self.resp.push_back(k);
         self.state = SS::Rdy;
 
+        #[cfg(debug)] println!("deserialised");
         Ok(true)
     }
 

@@ -11,3 +11,7 @@ libc = "0.2.29"
 
 [profile.release]
 lto = true
+rustflags = ["-C", "target-cpu=native"]
+
+[features]
+debug = []

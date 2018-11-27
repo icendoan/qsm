@@ -271,7 +271,7 @@ fn main() {
                 write!(o, "{})", c.c.as_ref().map(AsRef::as_ref).unwrap_or("none"));
                 o.flush().expect("Cannot flush stdout!");
             },
-            CRes::Sleep => thread::sleep(time::Duration::from_millis(1)),
+            CRes::Sleep => thread::sleep(time::Duration::from_millis(5)),
             CRes::Upd => ()
         }
     }
