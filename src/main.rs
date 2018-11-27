@@ -205,9 +205,9 @@ fn parse(x: String) -> R<Action> {
             }
         }
 
-        q.push_str("\"; {[x;y] x , \"\\n\" , .Q.sbt y}]");
+        q.push_str("\"; {[x;y] \"'\" , x , \"\\n\" , .Q.sbt y}]");
 
-        Ok(Action::Qry { query: x.into() })
+        Ok(Action::Qry { query: q })
     }
 
     match (&x).trim() {

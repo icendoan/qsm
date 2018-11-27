@@ -22,9 +22,9 @@ pub fn pr(l:usize,c:usize,x: k::K) {
         },
         99 => print!("\r{}",dict(N,l,c,x)),
         98 => print!("\r{}",tab(N,l,c,x)),
-        _ => {
+        t => {
             let s = nest(N,x);
-            if (s.len() < c) || (s.starts_with('{') && s.ends_with('}')) {
+            if (s.len() < c) || (s.starts_with('{') && s.ends_with('}')) || (t == 10 && s.starts_with('\'')) {
                 println!("\r{}", s);
             } else {
                 println!("\r{}...", &s[..c-3]);
