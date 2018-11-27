@@ -195,7 +195,22 @@ fn parse(x: String) -> R<Action> {
         let c = iter.next().ok_or(Err::Err(format!("Missing parameter: cols")))?.parse().map_err(|e| Err::Err(format!("num parse err: {:?}", e)))?;;
         Ok(Action::Fmt { fmt: (l, c) })
     }
-    fn qry(x: &str) -> R<Action> { Ok(Action::Qry { query: x.into() }) }
+    fn qry(x: &str) -> R<Action> {
+
+        /*
+        let mut q = String::from(".Q.trp[eval; parse \"");
+        for c in x.chars() {
+            match c {
+                '"' => q.push_str("\\\""),
+                c => q.push(c)
+            }
+        }
+
+        q.push_str("\"; {[x;y] x , \"\\n\" , .Q.sbt y}]");
+        */
+
+        Ok(Action::Qry { query: x.into() })
+    }
 
     match (&x).trim() {
         x if x.starts_with(":n") => new(&x[2..].trim()),

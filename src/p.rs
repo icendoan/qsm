@@ -24,10 +24,10 @@ pub fn pr(l:usize,c:usize,x: k::K) {
         98 => print!("\r{}",tab(N,l,c,x)),
         _ => {
             let s = nest(N,x);
-            if s.len() > c {
-                println!("\r{}...", &s[..c-3]);
-            } else {
+            if (s.len() < c) || (s.starts_with('{') && s.ends_with('}')) {
                 println!("\r{}", s);
+            } else {
+                println!("\r{}...", &s[..c-3]);
             }
         }
     };
