@@ -173,6 +173,9 @@ enum Action {
     NOP
 }
 
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+enum Query { Raw, Backtrace }
+
 fn parse(x: String) -> R<Action> {
 
     fn new(x: &str) -> R<Action> {
@@ -195,17 +198,26 @@ fn parse(x: String) -> R<Action> {
         let c = iter.next().ok_or(Err::Err(format!("Missing parameter: cols")))?.parse().map_err(|e| Err::Err(format!("num parse err: {:?}", e)))?;;
         Ok(Action::Fmt { fmt: (l, c) })
     }
-    fn qry(x: &str) -> R<Action> {
 
-        let mut q = String::from(".Q.trp[eval; parse \"");
-        for c in x.chars() {
-            match c {
-                '"' => q.push_str("\\\""),
-                c => q.push(c)
-            }
-        }
 
-        q.push_str("\"; {[x;y] \"'\" , x , \"\\n\" , .Q.sbt y}]");
+    fn qry(x: &str, m: Query) -> R<Action> {
+
+        let q = match m {
+            Query::Backtrace => {
+                let mut q = String::from(".Q.trp[eval; parse \"");
+                for c in x.chars() {
+                    match c {
+                        '"' => q.push_str("\\\""),
+                        '\\' => q.push_str(r"\\"),
+                        c => q.push(c)
+                    }
+                }
+                q.push_str("\"; {[x;y] \"'\" , x , \"\\n\" , .Q.sbt y}]");
+                q
+            },
+
+            Query::Raw => x.into()
+        };
 
         Ok(Action::Qry { query: q })
     }
@@ -216,10 +228,11 @@ fn parse(x: String) -> R<Action> {
         x if x.starts_with(":c") => cnn(&x[2..].trim()),
         x if x.starts_with(":h") => hlp(&x[2..].trim()),
         x if x.starts_with(":l") => lst(&x[2..].trim()),
+        x if x.starts_with(":r") => qry(&x[2..].trim(), Query::Raw),
         x if x.starts_with(":fmt") => fmt(&x[4..].trim()),
         x if x == "\\\\" => Ok(Action::Exit),
         x if x.is_empty() => Ok(Action::NOP),
-        x => qry(x)
+        x => qry(x, Query::Backtrace)
     }
 }
 
