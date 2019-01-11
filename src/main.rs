@@ -204,7 +204,7 @@ fn parse(x: String) -> R<Action> {
 
         let q = match m {
             Query::Backtrace => {
-                let mut q = String::from(".Q.trp[eval; parse \"");
+                let mut q = String::from(".Q.trp[eval; parse {$[0>type x;enlist x;x]} \"");
                 for c in x.chars() {
                     match c {
                         '"' => q.push_str("\\\""),
@@ -212,7 +212,7 @@ fn parse(x: String) -> R<Action> {
                         c => q.push(c)
                     }
                 }
-                q.push_str("\"; {[x;y] \"'\" , x , \"\\n\" , .Q.sbt y}]");
+                q.push_str("\"; {[x;y] \"'\" , x , \"\\n\" , .Q.sbt -3_y}]");
                 q
             },
 
