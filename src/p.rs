@@ -99,9 +99,33 @@ fn prim(num_items:usize, x:&k::K0)->P{
          x if ((x > -80) && (x < -19)) || ((x > 19) && (x < 80)) => P::A(format!("err: recv type {}, enums unexpected", x)),
         -128 => KA!(x,k::sK,|x| match s(x){P::A(s)=>P::A(format!("'{}",s)),_=>panic!()}),
         100=>P::A(str::from_utf8(k::tk::<u8>(x)).unwrap_or("'utf8").into()),
-        101=>P::A("::".into()),
+        101=>KA!(x,k::gK,monad), 102=>KA!(x,k::gK,dyad), 103=>KA!(x,k::gK,adverb),
         x => P::A(format!("Unrecognised type {}", x))
     }
+}
+
+fn monad(x:u8)->P{
+    let x: &str = ["::","+:","-:","*:","%:","&:","|:","^:","=:","<:",">:","$:", ",:",
+                   "#:","_:","~:","!:","?:","@:",".:","0::","1::","avg", "last","sum",
+                   "prd","min","max","exit","getenv","abs", "sqrt","log","exp","sin",
+                   "asin","cos","acos","tan","atan","enlist","var","dev"]
+        .get(x as usize)
+        .unwrap_or(&"unrecognised monad");
+    P::A(x.into())
+}
+
+fn dyad(x:u8)->P{
+    let x:&str=[":","+","-","*","%","&","|","^","=","<",">","$",",","#","_","~","!",
+                "?","@",".","0:","1:","2:","in","within","like","bin","ss","insert",
+                "wsum","wavg","div","xexp","setenv","binr","cov","cor"]
+        .get(x as usize)
+        .unwrap_or(&"unrecognised dyad");
+    P::A(x.into())
+}
+
+fn adverb(x:u8)->P{
+    let x:&str=["'","/","\\","':","/:","\\:"].get(x as usize).unwrap_or(&"unrecognised adverb");
+    P::A(x.into())
 }
 
 fn nest(n:usize,x:&k::K0)->String{
