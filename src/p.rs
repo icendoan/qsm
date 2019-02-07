@@ -5,6 +5,8 @@ use std::{ffi,str,cmp,iter};
 use k;
 
 const N:usize = 1_000;
+const NI:i32=-2147483648;
+const NJ:i64=-9223372036854775808;
 
 pub fn pr(l:usize,c:usize,x: k::K) {
 
@@ -40,25 +42,26 @@ fn b(x:u8)->P{P::A(format!("{}",if x!=0{1}else{0}))}
 fn guid(x: &[u8])->P{
     let mut s = String::new();
     for (i,b) in x.iter().enumerate()
-    { write!(&mut s, "{:x}", b); if 3 == (i % 4) { s.push('-'); } }
+    { write!(&mut s, "{:x}", b).unwrap(); if 3 == (i % 4) { s.push('-'); } }
     s.pop();
     P::A(s)
 }
 fn x0(x: k::G)->P{P::A(format!("{:x}",x))}
 fn auto<T: Display>(x:T)->P{P::A(format!("{}",x))}
-fn s(x: k::S) -> P { P::A(unsafe { ffi::CStr::from_ptr(x).to_str().unwrap_or("Invalid utf8").into() }) }
-fn p(x: k::J) -> P { P::A(format!("{}", NaiveDate::from_ymd(2000,1,1).and_hms(0,0,0) + Duration::nanoseconds(x))) }
-fn m(x: k::I) -> P { P::A(format!("{}.{}",2000+(x/12),1+(x%12))) }
-fn d(x: k::I) -> P {P::A(format!("{}",NaiveDate::from_ymd(2000,1,1)+Duration::days(x as i64)))}
-fn z(x: k::F) -> P {
+fn s(x: k::S)->P{P::A(unsafe { ffi::CStr::from_ptr(x).to_str().unwrap_or("Invalid utf8").into() }) }
+fn p(x: k::J)->P{P::A(if x==NJ{"0Np".into()}else{format!("{}",NaiveDate::from_ymd(2000,1,1).and_hms(0,0,0)+Duration::nanoseconds(x))}) }
+fn m(x: k::I)->P{P::A(if x==NI{"0Nm".into()}else{format!("{}.{}",2000+(x/12),1+(x%12))}) }
+fn d(x: k::I)->P{P::A(if x == NI { "0Nd".into() } else {format!("{}",NaiveDate::from_ymd(2000,1,1)+Duration::days(x as i64))})}
+fn z(x: k::F)->P{
     let d = NaiveDate::from_ymd(2000,1,1).and_hms(0,0,0)+Duration::days(x.trunc() as i64);
     let t = Duration::nanoseconds((x.fract() * (Duration::days(1).num_nanoseconds().unwrap() as f64)) as i64);
     P::A(format!("{}", d + t))
 }
-fn n(x: k::J) -> P { P::A(format!("{}", Duration::nanoseconds(x))) }
-fn u(x: k::I) -> P { P::A(format!("{}", NaiveTime::from_hms(0,0,0)+Duration::minutes(x as i64))) }
-fn v(x: k::I) -> P { P::A(format!("{}", NaiveTime::from_hms(0,0,0)+Duration::seconds(x as i64))) }
+fn n(x: k::J) -> P { if x == NJ {P::A("0Nn".into())} else {P::A(format!("{}", Duration::nanoseconds(x)))} }
+fn u(x: k::I) -> P { P::A(if x==NI{"0Nu".into()}else{format!("{}", NaiveTime::from_hms(0,0,0)+Duration::minutes(x as i64))}) }
+fn v(x: k::I) -> P { P::A(if x==NI{"0Nv".into()}else{format!("{}", NaiveTime::from_hms(0,0,0)+Duration::seconds(x as i64))}) }
 fn t(x: k::I) -> P {
+    if x == NI { return P::A("0Nt".into()) }
     let mm=(x%1000)as u32; let s=(x/1000)as u32; let m=(s/60)as u32; let h=(m/60)as u32;
     if let Some(t) = NaiveTime::from_hms_milli_opt(h%24,m%60,s%60,mm) {P::A(format!("{}",t))} else {P::A(format!("bad t {}",x))} }
 
@@ -260,16 +263,16 @@ fn key(n:usize, l:usize, c:usize, x:&k::K0,y:&k::K0) -> String {
 
     for (left_line, right_line) in left.lines().zip(right.lines()).take(if len > l { l - 1 } else { len }) {
         ln.clear();
-        write!(&mut ln, "{}| {}", left_line, right_line);
+        write!(&mut ln, "{}| {}", left_line, right_line).unwrap();
         if ln.len() > c {
-            writeln!(&mut s, "{}...", &ln[..c-3]);
+            writeln!(&mut s, "{}...", &ln[..c-3]).unwrap();
         } else {
-            writeln!(&mut s, "{}", ln);
+            writeln!(&mut s, "{}", ln).unwrap();
         }
     }
 
     if len > l {
-        writeln!(&mut s, "..");
+        writeln!(&mut s, "..").unwrap();
     }
 
     s
@@ -303,16 +306,16 @@ fn dict(n:usize, l:usize, c:usize, x:&k::K0)->String {
 
     for (k, v)  in keys.into_iter().zip(vals.into_iter()).take(if n <= l { l } else { l - 1 }) {
         ln.clear();
-        write!(&mut ln, "{:kw$}| {:vw$}", render(k), render(v), kw = key_width, vw = val_width);
+        write!(&mut ln, "{:kw$}| {:vw$}", render(k), render(v), kw = key_width, vw = val_width).unwrap();
         if ln.len() > c {
-            writeln!(&mut s, "{}...", &ln[..c-3]);
+            writeln!(&mut s, "{}...", &ln[..c-3]).unwrap();
         } else {
-            writeln!(&mut s, "{}", ln);
+            writeln!(&mut s, "{}", ln).unwrap();
         }
     }
 
     if n > l {
-        writeln!(&mut s, "..");
+        writeln!(&mut s, "..").unwrap();
     }
 
     s
