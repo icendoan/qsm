@@ -1,109 +1,563 @@
-#![allow(non_snake_case)]
-use std::fmt::{Write,Display};
-use chrono::{NaiveDate,NaiveTime,Duration};
-use std::{ffi,str,cmp,iter};
+use chrono::{NaiveDate, NaiveTime, Duration};
+use std::{ffi, str, fmt::{Write, Display}, f64, cmp};
 use k;
 
-const N:usize = 1_000;
-const NI:i32=-2147483648;
-const NJ:i64=-9223372036854775808;
+const N: usize = 100;
+const NULL_INT: i32 = -2147483648;
+const NULL_LONG: i64 = -9223372036854775808;
 
-pub fn pr(l:usize,c:usize,x: k::K) {
+pub fn pretty_print(lines: usize, cols: usize, x: k::K) {
+    print!("\r{:width$}", ' ', width = cols);
+    if x.is_null() {
+        println!("\rnullptr");
+        return
+    }
 
-    print!("\r{:width$}",' ',width=c);
-
-    if x.is_null() { println!("\rNullptr"); return }
-    let x = unsafe{ &*x };
+    let x = unsafe { &*x };
 
     match k::t(x) {
+        98 => { let x = k::kK(x); unsafe { let ks = k::tk::<k::K>(x); println!("\r{}", table(lines, cols, &*ks[0], &*ks[1])) } },
+        99 => { unsafe { let ks = k::tk::<k::K>(x); println!("\r{}",  dict(lines, cols, &*ks[0], &*ks[1])) } },
         0 => {
-            match prim(N,x) {
-                P::M(m) => println!("\r{}",join_with("\n",m)),
-                _ => panic!("prim on 0 list returned simple vec or atom")
+            if let P::M(m) = format(x) {
+                print!("\r");
+                for x in m {
+                    let s = render(x);
+                    if s.len() > cols {
+                        println!("{}..", &s[..cols-2]);
+                    } else {
+                        println!("{}", s);
+                    }
+                }
+            } else {
+                println!("\rinternal err: format 0h not P::M")
             }
         },
-        99 => print!("\r{}",dict(N,l,c,x)),
-        98 => print!("\r{}",tab(N,l,c,x)),
         t => {
-            let s = nest(N,x);
-            if (s.len() < c) || (s.starts_with('{') && s.ends_with('}')) || (t == 10 && s.starts_with('\'')) {
+            let s = render(format(x));
+            if (s.starts_with('{') && s.ends_with('}')) || (t == 10 && s.starts_with('\'')) {
                 println!("\r{}", s);
             } else {
-                println!("\r{}...", &s[..c-3]);
+                for (i, l) in s.lines().enumerate() {
+                    if i > lines {
+                        println!("..");
+                        return;
+                    }
+
+                    if l.len() > cols {
+                        println!("\r{}..", &l[..cols-2]);
+                    } else {
+                        println!("\r{}", l);
+                    }
+                }
+            }
+        },
+    }
+}
+
+#[derive(Debug, Clone)]
+enum P {
+    A(String),
+    M(Vec<P>),
+    V {
+        prefix: &'static str,
+        infix: &'static str,
+        suffix: &'static str,
+        ps: Vec<P>
+    }
+}
+
+fn render(p: P) -> String {
+    match p {
+        P::A(a) => a,
+        P::M(m) => {
+            let mut s = String::new();
+            for x in m {
+                s.push_str(&render(x));
+                s.push(';');
+            }
+
+            if s.len() > 0 {
+                s.truncate(s.len() - 1);
+            }
+
+            s
+        },
+        P::V { prefix, infix, suffix, ps } => {
+            if ps.is_empty() {
+                String::new()
+            } else {
+                let mut s: String = prefix.into();
+                for x in ps {
+                    s.push_str(&render(x));
+                    s.push_str(infix);
+                }
+                s.truncate(s.len() - infix.len());
+                s.push_str(suffix);
+                s
+            }
+        }
+    }
+}
+
+fn dict(lines: usize, cols: usize, k: &k::K0, v: &k::K0) -> String {
+    if (k::t(k) == 98) && (k::t(k) == 98) {
+        return keyed(lines, cols, k, v)
+    }
+
+    let keys = match format(k) {
+        P::A(s) => vec!(s),
+        P::M(m) => m.into_iter().map(|x| render(x)).collect(),
+        P::V { prefix: _, infix: _, suffix: _, ps } => ps.into_iter().map(|x| render(x)).collect()
+    };
+
+    let vals = match format(v) {
+        P::A(s) => vec!(s),
+        P::M(m) => m.into_iter().map(|x| render(x)).collect(),
+        P::V { prefix: _, infix: _, suffix: _, ps } => ps.into_iter().map(|x| render(x)).collect()
+    };
+
+    let key_width = keys.iter().map(String::len).max().unwrap_or(1);
+    let val_width = vals.iter().map(String::len).max().unwrap_or(1);
+
+    let mut s = String::new();
+    let mut l = String::new();
+    let n = keys.len();
+
+    for (k, v) in keys.into_iter().zip(vals.into_iter()).take(if n > lines { n - 1 } else { n }) {
+        write!(&mut l, "{:key_width$}| {:val_width$}", k, v, key_width = key_width, val_width = val_width).unwrap();
+        if l.len() > cols {
+            writeln!(&mut s, "{}..", &l[..cols-2]).unwrap();
+        } else {
+            writeln!(&mut s, "{}", l).unwrap();
+        }
+    }
+
+    s
+}
+
+fn table(lines: usize, cols: usize, k: &k::K0, v: &k::K0) -> String {
+    fn write_line(cols: usize, from: &str, to: &mut String) {
+        if from.len() > cols {
+            writeln!(to, "{}..", &from[..cols]).unwrap()
+        } else {
+            writeln!(to, "{}", from).unwrap()
+        }
+    }
+
+    let names: Vec<String> = match format(k) {
+        P::A(s) => vec!(s),
+        P::M(m) => m.into_iter().map(render).collect(),
+        P::V { prefix: _, infix: _, suffix: _, ps } => ps.into_iter().map(render).collect()
+    };
+
+    let vs = k::tk::<k::K>(v);
+
+    let mut vals: Vec<Vec<String>> = Vec::with_capacity(names.len());
+    for v in vs {
+        match format(unsafe { &**v }) {
+            P::A(s) => vals.push(s.chars().map(|x| format!("{}", x)).collect()),
+            P::M(m) => vals.push(m.into_iter().map(render).collect()),
+            P::V { prefix: _, infix: _, suffix: _, ps } => vals.push(ps.into_iter().map(render).collect())
+        }
+    }
+    assert_eq!(vals.len(), names.len());
+    let mut widths = Vec::with_capacity(names.len());
+    for i in 0 .. names.len() {
+        let mut n = names[i].len();
+        n = cmp::max(n, vals[i].iter().map(String::len).max().unwrap_or(0));
+        widths.push(n + 1);
+    }
+
+    let mut line = String::new();
+    let mut s = String::new();
+
+    for (c, w) in names.iter().zip(widths.iter().cloned()) {
+        write!(&mut line, "{:width$}", c, width = w).unwrap();
+    }
+
+    write_line(cols, &line, &mut s);
+    line.clear();
+
+    for _ in 0 .. widths.iter().sum() {
+        line.push('-');
+    }
+    write_line(cols, &line, &mut s);
+    line.clear();
+
+    let n = vals.iter().map(Vec::len).max().unwrap_or(0);
+    for i in 0 .. if n > lines { lines - 1 } else { n } {
+        for j in 0..names.len() {
+            write!(&mut line, "{:width$}", vals[j][i], width = widths[j]).unwrap();
+        }
+        write_line(cols, &line, &mut s);
+        line.clear();
+    }
+
+    if n > lines {
+        writeln!(&mut s, "..").unwrap();
+    }
+
+    s
+}
+
+fn keyed(lines: usize, cols: usize, k: &k::K0, v: &k::K0) -> String {
+    let (lk, lv) = unsafe { let x = k::tk::<k::K>(k); (&*x[0], &*x[1]) };
+    let (rk, rv) = unsafe { let x = k::tk::<k::K>(v); (&*x[0], &*x[1]) };
+
+    let lhs = table(lines, cols, lk, lv);
+    let rhs = table(lines, cols, rk, rv);
+
+    let mut s = String::new();
+    let mut line = String::new();
+    let len = lhs.len();
+
+    for (l, r) in lhs.lines().zip(rhs.lines()).take(if len > lines { len - 1 } else { len }) {
+        write!(&mut line, "{}| {}", l, r).unwrap();
+        if line.len() > cols {
+            writeln!(&mut s, "{}..", &line[..cols-2]).unwrap();
+        } else {
+            writeln!(&mut s, "{}", line).unwrap();
+        }
+        line.clear();
+    }
+
+    if len > lines {
+        writeln!(&mut s, "..").unwrap();
+    }
+
+    s
+}
+
+fn format(x: &k::K0) -> P {
+    match k::t(x) {
+        0 => {
+            let elements = k::tk::<k::K>(x);
+            let formatted = elements.iter().take(N).map(|x| unsafe { format(&**x)}).collect();
+            P::M(formatted)
+        },
+        -1 => atom_bool(k::gK(x)),
+        1 => array("", "", "b", |x| atom_bool(*x), k::tk::<u8>(x)),
+        -2 => atom_guid(k::tk::<[u8;16]>(x).first().unwrap()),
+        2 => array("", ", ", "", atom_guid, k::tk::<[u8;16]>(x)),
+        -4 => atom_byte(k::gK(x)),
+        4 => array("0x", "", "", |x| atom_byte(*x), k::tk::<u8>(x)),
+        -5 => atom_auto(k::hK(x)),
+        5 => array("", " ", "", atom_auto, k::tk::<k::H>(x)),
+        -6 => atom_int(k::iK(x)),
+        6 => array("", " ", "", |x| atom_int(*x), k::tk::<k::I>(x)),
+        -7 => atom_long(k::jK(x)),
+        7 => array("", " ", "", |x| atom_long(*x), k::tk::<k::J>(x)),
+        -8 => atom_auto(k::eK(x)),
+        8 => array("", " ", "", atom_auto, k::tk::<k::E>(x)),
+        -9 => atom_float(k::fK(x)),
+        9 => array("", " ", "", |x| atom_float(*x), k::tk::<k::F>(x)),
+        -10 => atom_auto(k::gK(x) as char),
+        10 => array("\"", "", "\"", |x| atom_auto((*x) as char), k::tk::<u8>(x)),
+        -11 => atom_sym(k::sK(x)),
+        11 => array("`", "`", "", |x| atom_sym(*x), k::tk::<k::S>(x)),
+        -12 => atom_timestamp(k::jK(x)),
+        12 => array(""," ","",|x| atom_timestamp(*x), k::tk::<k::J>(x)),
+        -13 => atom_month(k::iK(x)),
+        13 => array("", " ", "", |x| atom_month(*x), k::tk::<k::I>(x)),
+        -14 => atom_date(k::iK(x)),
+        14 => array("", " ", "", |x| atom_date(*x), k::tk::<k::I>(x)),
+        -15 => atom_datetime(k::fK(x)),
+        15 => array("", " ", "", |x| atom_datetime(*x), k::tk::<k::F>(x)),
+        -16 => atom_timespan(k::jK(x)),
+        16 => array("", " ", "", |x| atom_timespan(*x), k::tk::<k::J>(x)),
+        -17 => atom_minute(k::iK(x)),
+        17 => array("", " ", "", |x| atom_minute(*x), k::tk::<k::I>(x)),
+        -18 => atom_second(k::iK(x)),
+        18 => array("", " ", "", |x| atom_second(*x), k::tk::<k::I>(x)),
+        -19 => atom_time(k::iK(x)),
+        19 => array("", " ", "", |x| atom_time(*x), k::tk::<k::I>(x)),
+        98 => { unsafe { let k = k::kK(x); flat_tab(&*k::tk::<k::K>(k)[0], &*k::tk::<k::K>(k)[1]) } },
+        99 => { let k; let v; let ks = k::tk::<k::K>(x); unsafe { k = &*ks[0]; v = &* ks[1]; } flat_dict(k, v) },
+        x if ((x > -80) && (x < -19)) || ((x > 19) && (x < 80)) => P::A(format!("unsupported enum type {}", x)),
+        -128 => atom_err(k::sK(x)),
+        100 => P::A(str::from_utf8(k::tk::<u8>(x)).unwrap_or("invalid utf8").into()),
+        101 => monad(k::gK(x)),
+        102 => dyad(k::gK(x)),
+        103 => adverb(k::gK(x)),
+        t => P::A(format!("unsupported type {}", t))
+    }
+}
+
+fn array<'a, T: 'a, F: 'a + Fn(&'a T) -> P>(prefix: &'static str, infix: &'static str, suffix: &'static str, f: F, x: &'a [T]) -> P {
+    let ps = x.iter()
+        .take(N)
+        .map(f)
+        .collect();
+    P::V { prefix, infix, suffix, ps }
+}
+
+fn flat_dict(k: &k::K0, v: &k::K0) -> P {
+
+    let keys = match format(k) {
+        P::A(a) => a,
+        P::M(m) => {
+            if m.is_empty() {
+                "()".into()
+            } else {
+                let mut s = String::from("(");
+                for x in m {
+                    write!(&mut s, "{};", render(x)).unwrap();
+                }
+                s.pop();
+                s.push(')');
+                s
+            }
+        },
+        P::V { prefix, infix, suffix, ps } => {
+            if ps.is_empty() {
+                String::from("()")
+            } else {
+                let mut s: String = format!("({}", prefix);
+                for x in ps {
+                    s.push_str(&render(x));
+                    s.push_str(infix);
+                }
+                s.truncate(s.len() - infix.len());
+                s.push_str(suffix);
+                s.push(')');
+                s
             }
         }
     };
 
-    unsafe { k::r0(x) }
+    let vals = match format(v) {
+        P::A(a) => a,
+        P::M(m) => {
+            if m.is_empty() {
+                "()".into()
+            } else {
+                let mut s = String::from("(");
+                for x in m {
+                    write!(&mut s, "{};", render(x)).unwrap();
+                }
+                s.pop();
+                s.push(')');
+                s
+            }
+        },
+        P::V { prefix, infix, suffix, ps } => {
+            if ps.is_empty() {
+                String::from("()")
+            } else {
+                let mut s: String = format!("({}", prefix);
+                for x in ps {
+                    s.push_str(&render(x));
+                    s.push_str(infix);
+                }
+                s.truncate(s.len() - infix.len());
+                s.push_str(suffix);
+                s.push(')');
+                s
+            }
+        }
+    };
+
+    P::A(format!("{}!{}", keys, vals))
 }
 
-enum P { A(String), V(Option<&'static str>, Option<&'static str>,Option<&'static str>, Vec<P>), M(Vec<P>) }
-fn b(x:u8)->P{P::A(format!("{}",if x!=0{1}else{0}))}
-fn guid(x: &[u8])->P{
+fn flat_tab(n: &k::K0, c: &k::K0) -> P {
+    let keys = match format(n) {
+        P::A(a) => a,
+        P::M(m) => {
+            if m.is_empty() {
+                "()".into()
+            } else {
+                let mut s = String::from("(");
+                for x in m {
+                    write!(&mut s, "{};", render(x)).unwrap();
+                }
+                s.pop();
+                s.push(')');
+                s
+            }
+        },
+        P::V { prefix, infix, suffix, ps } => {
+            if ps.is_empty() {
+                String::from("()")
+            } else {
+                let mut s: String = format!("({}", prefix);
+                for x in ps {
+                    s.push_str(&render(x));
+                    s.push_str(infix);
+                }
+                s.truncate(s.len() - infix.len());
+                s.push_str(suffix);
+                s.push(')');
+                s
+            }
+        }
+    };
+
+    let vals = match format(c) {
+        P::A(a) => a,
+        P::M(m) => {
+            if m.is_empty() {
+                "()".into()
+            } else {
+                let mut s = String::from("(");
+                for x in m {
+                    write!(&mut s, "{};", render(x)).unwrap();
+                }
+                s.pop();
+                s.push(')');
+                s
+            }
+        },
+        P::V { prefix, infix, suffix, ps } => {
+            if ps.is_empty() {
+                String::from("()")
+            } else {
+                let mut s: String = format!("({}", prefix);
+                for x in ps {
+                    s.push_str(&render(x));
+                    s.push_str(infix);
+                }
+                s.truncate(s.len() - infix.len());
+                s.push_str(suffix);
+                s.push(')');
+                s
+            }
+        }
+    };
+
+    P::A(format!("+{}!{}", keys, vals))
+}
+
+fn atom_bool(x: u8) -> P {
+    P::A(format!("{}", if x != 0 { 1 } else { 0 }))
+}
+
+fn atom_guid(x: &[u8; 16]) -> P {
     let mut s = String::new();
-    for (i,b) in x.iter().enumerate()
-    { write!(&mut s, "{:x}", b).unwrap(); if 3 == (i % 4) { s.push('-'); } }
+    for (i, b) in x.iter().enumerate() {
+        write!(&mut s, "{:x}", b).unwrap();
+        if 3 == (i % 4) {
+            s.push('-');
+        }
+    }
+
     s.pop();
     P::A(s)
 }
-fn x0(x: k::G)->P{P::A(format!("{:x}",x))}
-fn auto<T: Display>(x:T)->P{P::A(format!("{}",x))}
-fn s(x: k::S)->P{P::A(unsafe { ffi::CStr::from_ptr(x).to_str().unwrap_or("Invalid utf8").into() }) }
-fn p(x: k::J)->P{P::A(if x==NJ{"0Np".into()}else{format!("{}",NaiveDate::from_ymd(2000,1,1).and_hms(0,0,0)+Duration::nanoseconds(x))}) }
-fn m(x: k::I)->P{P::A(if x==NI{"0Nm".into()}else{format!("{}.{}",2000+(x/12),1+(x%12))}) }
-fn d(x: k::I)->P{P::A(if x == NI { "0Nd".into() } else {format!("{}",NaiveDate::from_ymd(2000,1,1)+Duration::days(x as i64))})}
-fn z(x: k::F)->P{
-    let d = NaiveDate::from_ymd(2000,1,1).and_hms(0,0,0)+Duration::days(x.trunc() as i64);
+
+fn atom_byte(x: k::G) -> P {
+    P::A(format!("{:x}", x))
+}
+
+fn atom_auto<T: Display>(x: T) -> P {
+    P::A(format!("{}", x))
+}
+
+fn atom_int(x: k::I) -> P {
+    if x == NULL_INT {
+        P::A("0Ni".into())
+    } else {
+        P::A(format!("{}", x))
+    }
+}
+
+fn atom_long(x: k::J) -> P {
+    if x == NULL_LONG {
+        P::A("0N".into())
+    } else {
+        P::A(format!("{}", x))
+    }
+}
+
+fn atom_float(x: k::F) -> P {
+    if x.is_nan() {
+        P::A("0n".into())
+    } else {
+        P::A(format!("{}", x))
+    }
+}
+
+
+fn atom_sym(x: k::S) -> P {
+    let s = unsafe {
+        ffi::CStr::from_ptr(x).to_str().unwrap_or("invalid utf8").into()
+    };
+
+    P::A(s)
+}
+
+fn atom_err(x: k::S) -> P {
+    let s = unsafe {
+        ffi::CStr::from_ptr(x).to_str().unwrap_or("invalid utf8")
+    };
+
+    P::A(format!("'{}", s))
+}
+
+fn atom_timestamp(x: k::J) -> P {
+    if x == NULL_LONG {
+        P::A("0Np".into())
+    } else {
+        let nd = NaiveDate::from_ymd(2000,1,1).and_hms(0,0,0) + Duration::nanoseconds(x);
+        P::A(format!("{}", nd))
+    }
+}
+
+fn atom_month(x: k::I) -> P {
+    if x == NULL_INT {
+        P::A("0Nm".into())
+    } else {
+        let y = 2000 + x / 12;
+        let m = x % 12;
+        P::A(format!("{}.{}", y, m))
+    }
+}
+
+fn atom_date(x: k::I) -> P {
+    if x == NULL_INT {
+        P::A("0Nd".into())
+    } else {
+        let d = NaiveDate::from_ymd(2000,1,1) + Duration::days(x as i64);
+        P::A(format!("{}", d))
+    }
+}
+
+fn atom_datetime(x: k::F) -> P {
+    let d = NaiveDate::from_ymd(2000, 1, 1).and_hms(0, 0, 0) + Duration::days(x.trunc() as i64);
     let t = Duration::nanoseconds((x.fract() * (Duration::days(1).num_nanoseconds().unwrap() as f64)) as i64);
     P::A(format!("{}", d + t))
 }
-fn n(x: k::J) -> P { if x == NJ {P::A("0Nn".into())} else {P::A(format!("{}", Duration::nanoseconds(x)))} }
-fn u(x: k::I) -> P { P::A(if x==NI{"0Nu".into()}else{format!("{}", NaiveTime::from_hms(0,0,0)+Duration::minutes(x as i64))}) }
-fn v(x: k::I) -> P { P::A(if x==NI{"0Nv".into()}else{format!("{}", NaiveTime::from_hms(0,0,0)+Duration::seconds(x as i64))}) }
-fn t(x: k::I) -> P {
-    if x == NI { return P::A("0Nt".into()) }
-    let mm=(x%1000)as u32; let s=(x/1000)as u32; let m=(s/60)as u32; let h=(m/60)as u32;
-    if let Some(t) = NaiveTime::from_hms_milli_opt(h%24,m%60,s%60,mm) {P::A(format!("{}",t))} else {P::A(format!("bad t {}",x))} }
 
-macro_rules! KA {
-    ($k:expr,$ac:expr) => (auto($ac($k))) ;
-    ($k:expr,$ac:expr,$at:expr) => ($at($ac($k)))
+fn atom_timespan(x: k::J) -> P {
+    if x == NULL_LONG {
+        P::A("0Nn".into())
+    } else {
+        P::A(format!("{}", Duration::nanoseconds(x)))
+    }
 }
 
-macro_rules! KV {
-    ($k:expr,$num:expr,$tt:ty) => (P::V(None,None,None,k::tk::<$tt>($k).iter().take($num).map(|x|auto(*x)).collect())) ;
-    ($k:expr,$num:expr,$tt:ty,$at:expr) => (P::V(None,None,None,k::tk::<$tt>($k).iter().take($num).map(|x|$at(*x)).collect()));
-    ($k:expr,$num:expr,$tt:ty,$at:expr,$sep:expr,$pre:expr,$suf:expr) =>
-        (P::V(Some($sep),Some($pre),Some($suf),k::tk::<$tt>($k).iter().take($num).map(|x|$at(*x)).collect()))
+fn atom_minute(x: k::I) -> P {
+    if x == NULL_INT {
+        P::A("0Nu".into())
+    } else {
+        P::A(format!("{}", NaiveTime::from_hms(0, 0, 0) + Duration::minutes(x as i64)))
+    }
 }
 
-fn prim(num_items:usize, x:&k::K0)->P{
-    match k::t(x) {
-        0 =>P::M(k::tk::<k::K>(x).iter().take(num_items).map(|x|unsafe{prim(num_items, &**x)}).collect()),
-        -1=>KA!(x,k::gK,b),1=>KV!(x,num_items,u8,b,"","","b"),
-        -2=>guid(k::tk::<u8>(x)),2=>P::V(None,None,None,k::tk::<u8>(x).chunks(16).take(num_items).map(guid).collect()),
-        -4=>KA!(x,k::gK,x0),4=>KV!(x,num_items,u8,x0,"","0x",""),
-        -5=>KA!(x,k::hK),5=>KV!(x,num_items,k::H),
-        -6=>KA!(x,k::iK),6=>KV!(x,num_items,k::I),
-        -7=>KA!(x,k::jK),7=>KV!(x,num_items,k::J),
-        -8=>KA!(x,k::eK),8=>KV!(x,num_items,k::E),
-        -9=>KA!(x,k::fK),9=>KV!(x,num_items,k::F),
-        -10=>KA!(x,|x|k::gK(x)as char),10=>KV!(x,num_items,u8,|x:u8|auto(x as char),"","",""),
-        -11=>KA!(x,k::sK,s),11=>KV!(x,num_items,k::S,s,"`","`",""),
-        -12=>KA!(x,k::jK,p),12=>KV!(x,num_items,k::J,p),
-        -13=>KA!(x,k::iK,m),13=>KV!(x,num_items,k::I,m),
-        -14=>KA!(x,k::iK,d),14=>KV!(x,num_items,k::I,d),
-        -15=>KA!(x,k::fK,z),15=>KV!(x,num_items,k::F,z),
-        -16=>KA!(x,k::jK,n),16=>KV!(x,num_items,k::J,n),
-        -17=>KA!(x,k::iK,v),17=>KV!(x,num_items,k::I,v),
-        -18=>KA!(x,k::iK,u),18=>KV!(x,num_items,k::I,u),
-        -19=>KA!(x,k::iK,t),19=>KV!(x,num_items,k::I,t),
-        98=>P::A(nest(num_items,x)), 99 => P::A(nest(num_items,x)),
-         x if ((x > -80) && (x < -19)) || ((x > 19) && (x < 80)) => P::A(format!("err: recv type {}, enums unexpected", x)),
-        -128 => KA!(x,k::sK,|x| match s(x){P::A(s)=>P::A(format!("'{}",s)),_=>panic!()}),
-        100=>P::A(str::from_utf8(k::tk::<u8>(x)).unwrap_or("'utf8").into()),
-        101=>KA!(x,k::gK,monad), 102=>KA!(x,k::gK,dyad), 103=>KA!(x,k::gK,adverb),
-        x => P::A(format!("Unrecognised type {}", x))
+fn atom_second(x: k::I) -> P {
+    if x == NULL_INT {
+        P::A("0Nv".into())
+    } else {
+        P::A(format!("{}", NaiveTime::from_hms(0, 0, 0) + Duration::seconds(x as i64)))
+    }
+}
+
+fn atom_time(x: k::I) -> P {
+    if x == NULL_INT {
+        P::A("0Nt".into())
+    } else {
+        P::A(format!("{}", NaiveTime::from_hms(0, 0, 0) + Duration::milliseconds(x as i64)))
     }
 }
 
@@ -129,235 +583,4 @@ fn dyad(x:u8)->P{
 fn adverb(x:u8)->P{
     let x:&str=["'","/","\\","':","/:","\\:"].get(x as usize).unwrap_or(&"unrecognised adverb");
     P::A(x.into())
-}
-
-fn nest(n:usize,x:&k::K0)->String{
-    match k::t(x) {
-        98=>format!("+{}",nest(n,unsafe{&*k::kK(x)})),
-        99=>format!("{}!{}",nest(n,unsafe{&*k::tk::<k::K>(x)[0]}),nest(n,unsafe{&*k::tk::<k::K>(x)[1]})),
-        _=> match prim(n,x) {
-            P::A(x) => x,
-            P::V(Some(ds),Some(pre),Some(suf),x) => format!("{}{}{}",pre,join_with(ds,x),suf),
-            P::V(_,_,_,x) => join_with(" ",x),
-            P::M(x) => join_with(";",x)
-        }
-    }
-}
-
-fn plen(p:&P)->usize{
-    match *p {
-        P::A(ref a) => a.len(),
-        P::V(Some(ref s),Some(ref pre), Some(ref suf), ref v) => v.iter().map(plen).sum::<usize>() + s.len() * (v.len() - 1) + pre.len() + suf.len(),
-        P::V(_,_,_,ref v) => v.iter().map(plen).sum::<usize>() + v.len() - 1, // rendered: 1 2 3
-        P::M(ref m) => m.iter().map(plen).sum::<usize>() + m.len() + 1  // rendered: (1;`abc;2)
-    }
-}
-
-
-fn tab(n:usize, l:usize, c:usize, x:&k::K0)->String {
-
-    let cols: Vec<String> = match prim(n, unsafe { &*k::tk::<k::K>(&*k::kK(x))[0] }) {
-        P::V(_,_,_,ps) => ps.into_iter().map(|x| match x { P::A(s) => s, _ => panic!() }).collect(),
-        _ => panic!()
-    };
-
-    let values: Vec<P> = match prim(n, unsafe { &*k::tk::<k::K>(&*k::kK(x))[1] }) {
-        P::V(_,_,_,ps) => ps,
-        P::M(ms) => ms,
-        P::A(_) => panic!("unexpected atom in table!")
-    };
-    assert_eq!(cols.len(), values.len());
-
-    let widths: Vec<usize> = cols.iter()
-        .map(String::len)
-        .zip(values.iter().map(|x| {
-            match *x {
-                P::A(_) => panic!("Unexpected atom in table"),
-                P::M(ref y) | P::V(_,_,_,ref y) => y.iter().map(plen).max().unwrap_or(1)
-            }
-        }))
-        .map(|(x,y)|cmp::max(x,y))
-        .collect();
-
-    assert_eq!(cols.len(), widths.len());
-
-    let num_rows = match values[0] {
-        P::A(_) => panic!("unexpected atom in table"),
-        P::M(ref m) => m.len(),
-        P::V(_,_,_,ref v)=>v.len()
-    };
-
-    let mut s = String::new();
-    let mut ln = String::with_capacity(c);
-
-    for (c0, w) in cols.iter().zip(widths.iter()) {
-        write!(&mut ln, "{:width$} ", c0, width = w);
-    }
-
-    let len = ln.len();
-
-    if ln.len() > c {
-        writeln!(&mut s, "{}...", &ln[..c-3]);
-    } else {
-        writeln!(&mut s, "{}", ln);
-    }
-
-    if len > c {
-        for c in iter::repeat('-').take(c-3) {
-            s.push(c);
-        }
-        s.push_str("...");
-    } else {
-        for c in iter::repeat('-').take(len) {
-            s.push(c);
-        }
-    }
-    s.push('\n');
-
-    let mut iters: Vec<_> = values.into_iter().map(|x| match x {
-        P::V(_,_,_,vs) => vs.into_iter(),
-        P::M(ms) => ms.into_iter(),
-        P::A(_) => panic!("unexpected atom in table!")
-    }).collect();
-
-    for _ in 0..l {
-        ln.clear();
-        for (i, w) in widths.iter().enumerate() {
-            let iter = &mut iters[i];
-            match iter.next() {
-                Some(P::A(a)) => write!(&mut ln, "{:width$}", a, width = w + 1),
-                Some(P::V(Some(s),Some(pre),Some(suf),v)) => {
-                    let body = join_with(s,v);
-                    write!(&mut ln, "{}{}{}{:width$}", pre, body, suf, "", width = *w - cmp::max(*w + 1,pre.len() - suf.len() - body.len()))
-                },
-                Some(P::V(_,_,_,v)) => write!(&mut ln, "{:width$}", join_with(" ", v), width = w + 1),
-                Some(P::M(m)) => {
-                    let m0 = join_with(";", m);
-                    write!(&mut ln, "({}){:width$}", m0, " ", width = w - m0.len() - 1)
-                },
-                None => Ok(())
-            }.unwrap();
-        }
-
-        if ln.len() > c {
-            writeln!(&mut s, "{}...", &ln[..c-3]);
-        } else if ln.len() > 0 {
-            writeln!(&mut s, "{}", ln);
-        }
-    }
-    if l < num_rows {
-        writeln!(&mut s, "..");
-    }
-
-    s
-}
-
-fn key(n:usize, l:usize, c:usize, x:&k::K0,y:&k::K0) -> String {
-    let left = tab(n / 2, l, c, x);
-    let right = tab(n / 2, l, c, y);
-
-    let mut s = String::with_capacity(l * c);
-    let mut ln = String::new();
-
-    let len = left.lines().count();
-
-    for (left_line, right_line) in left.lines().zip(right.lines()).take(if len > l { l - 1 } else { len }) {
-        ln.clear();
-        write!(&mut ln, "{}| {}", left_line, right_line).unwrap();
-        if ln.len() > c {
-            writeln!(&mut s, "{}...", &ln[..c-3]).unwrap();
-        } else {
-            writeln!(&mut s, "{}", ln).unwrap();
-        }
-    }
-
-    if len > l {
-        writeln!(&mut s, "..").unwrap();
-    }
-
-    s
-}
-
-fn dict(n:usize, l:usize, c:usize, x:&k::K0)->String {
-    let keys = unsafe { &*k::tk::<k::K>(x)[0] };
-    let vals = unsafe { &*k::tk::<k::K>(x)[1] };
-
-    if (k::t(keys) == 98) && (k::t(vals) == 98) {
-        return key(n, l, c, keys, vals);
-    }
-
-    let keys: Vec<P> = match prim(n, keys) {
-        P::A(_) => panic!("Cannot have atom as dict key"),
-        P::M(x) | P::V(_,_,_,x) => x
-    };
-
-    let vals: Vec<P> = match prim(n, vals) {
-        P::A(_) => panic!("cannot have atom as dict val"),
-        P::M(x) | P::V(_,_,_,x) => x
-    };
-
-    let n = keys.len();
-
-    let key_width = keys.iter().map(plen).max().unwrap_or(1);
-    let val_width = vals.iter().map(plen).max().unwrap_or(1);
-
-    let mut s = String::new();
-    let mut ln = String::new();
-
-    for (k, v)  in keys.into_iter().zip(vals.into_iter()).take(if n <= l { l } else { l - 1 }) {
-        ln.clear();
-        write!(&mut ln, "{:kw$}| {:vw$}", render(k), render(v), kw = key_width, vw = val_width).unwrap();
-        if ln.len() > c {
-            writeln!(&mut s, "{}...", &ln[..c-3]).unwrap();
-        } else {
-            writeln!(&mut s, "{}", ln).unwrap();
-        }
-    }
-
-    if n > l {
-        writeln!(&mut s, "..").unwrap();
-    }
-
-    s
-}
-
-fn render(x:P)->String{
-    match x {
-        P::A(a) => a,
-        P::V(Some(""), Some(""), Some(""), vs) => {
-            let mut s = String::new();
-            for v in vs { write!(&mut s, "{}", render(v)).unwrap() }
-            s
-        }
-        P::V(Some(sep), Some(pre), Some(suf), vs) => {
-            let mut s = String::new();
-            let n = vs.len();
-            for v in vs {
-                write!(&mut s, "{}{}{}{}", pre, render(v), suf, sep).unwrap();
-            }
-            if n>0 {s.truncate(s.len()-sep.len())}
-            s
-        },
-        P::V(_,_,_,vs)=>join_with(" ",vs),
-        P::M(ms) => join_with(";",ms)
-    }
-}
-
-fn join_with(sep: &str, x: Vec<P>) -> String {
-    let mut s = String::new();
-    let n = x.len();
-    for p in x {
-        match p {
-            P::A(y) => write!(&mut s, "{}{}", y, sep).unwrap(),
-            P::V(Some(ds), Some(pre), Some(suf), y) => write!(&mut s, "({}{}{}){}", pre, join_with(ds,y), suf, sep).unwrap(),
-            P::V(_, _, _, y) => write!(&mut s, "({}){}", join_with(";",y), sep).unwrap(),
-            P::M(y) => write!(&mut s, "({}){}", join_with(";",y), sep).unwrap(),
-        }
-    }
-
-    if n > 0 {
-        s.truncate(s.len() - sep.len());
-    }
-
-    s
 }

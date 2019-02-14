@@ -58,7 +58,7 @@ impl C {
         if let Some(srv) = self.s.get_mut(self.c.as_ref().map(AsRef::as_ref).unwrap_or("none")) {
             if let Some(k) = srv.resp() {
                 let (l, c) = self.fmt;
-                p::pr(l,c,k);
+                p::pretty_print(l, c, k);
                 res |= CRes::Prompt;
             }
         }
@@ -279,7 +279,7 @@ fn main() {
 
     unsafe { k::khp(ffi::CString::default().as_ptr(),-1); }
 
-    write!(o, "{})", c.c.as_ref().map(AsRef::as_ref).unwrap_or("none"));
+    write!(o, "{})", c.c.as_ref().map(AsRef::as_ref).unwrap_or("none")).expect("Cannot write to stdout");
     o.flush().expect("Cannot flush stdout!");
 
     // run through init updates without output
@@ -294,7 +294,7 @@ fn main() {
         match c.exec() {
             CRes::Exit => break,
             CRes::Prompt => {
-                write!(o, "{})", c.c.as_ref().map(AsRef::as_ref).unwrap_or("none"));
+                write!(o, "{})", c.c.as_ref().map(AsRef::as_ref).unwrap_or("none")).expect("Cannot write to stdout");
                 o.flush().expect("Cannot flush stdout!");
             },
             CRes::Sleep => thread::sleep(time::Duration::from_millis(5)),
