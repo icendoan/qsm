@@ -202,15 +202,15 @@ fn table(lines: usize, cols: usize, k: &k::K0, v: &k::K0) -> String {
 }
 
 fn keyed(lines: usize, cols: usize, k: &k::K0, v: &k::K0) -> String {
-    let (lk, lv) = unsafe { let x = k::tk::<k::K>(k); (&*x[0], &*x[1]) };
-    let (rk, rv) = unsafe { let x = k::tk::<k::K>(v); (&*x[0], &*x[1]) };
+    let (lk, lv) = unsafe { let x = k::kK(k); let x = k::tk::<k::K>(x); (&*x[0], &*x[1]) };
+    let (rk, rv) = unsafe { let x = k::kK(v); let x = k::tk::<k::K>(x); (&*x[0], &*x[1]) };
 
     let lhs = table(lines, cols, lk, lv);
     let rhs = table(lines, cols, rk, rv);
 
     let mut s = String::new();
     let mut line = String::new();
-    let len = lhs.len();
+    let len = lhs.lines().count();
 
     for (l, r) in lhs.lines().zip(rhs.lines()).take(if len > lines { len - 1 } else { len }) {
         write!(&mut line, "{}| {}", l, r).unwrap();
