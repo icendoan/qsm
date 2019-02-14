@@ -279,9 +279,6 @@ fn main() {
 
     unsafe { k::khp(ffi::CString::default().as_ptr(),-1); }
 
-    write!(o, "{})", c.c.as_ref().map(AsRef::as_ref).unwrap_or("none")).expect("Cannot write to stdout");
-    o.flush().expect("Cannot flush stdout!");
-
     // run through init updates without output
     loop {
         match c.exec() {
@@ -289,6 +286,14 @@ fn main() {
             CRes::Sleep => break
         }
     }
+
+    if c.s.contains_key("q") {
+        c.accept(Action::Cnn { name: Some("q".into()) }).unwrap();
+        c.exec();
+    }
+
+    write!(o, "{})", c.c.as_ref().map(AsRef::as_ref).unwrap_or("none")).expect("Cannot write to stdout");
+    o.flush().expect("Cannot flush stdout!");
 
     loop {
         match c.exec() {
