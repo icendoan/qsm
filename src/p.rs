@@ -35,10 +35,8 @@ pub fn pretty_print(lines: usize, cols: usize, x: k::K) {
         },
         t => {
             let s = render(format(x));
-            if t == 10 && s.starts_with("\"{") && s.ends_with("}\"") {
+            if t == 10 && ((s.starts_with("\"{") && s.ends_with("}\"")) || s.starts_with("\"'")) {
                 println!("\r{}", &s[1..s.len()-1]);
-            } else if t == 10 && s.starts_with('\'') {
-                println!("\r{}", s);
             } else {
                 for (i, l) in s.lines().enumerate() {
                     if i > lines {
