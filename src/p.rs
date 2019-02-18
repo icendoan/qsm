@@ -21,6 +21,11 @@ pub fn pretty_print(lines: usize, cols: usize, x: k::K) {
         0 => {
             if let P::M(m) = format(x) {
                 print!("\r");
+
+                if m.is_empty() {
+                    println!()
+                }
+
                 for x in m {
                     let s = render(x);
                     if s.len() > cols {
@@ -33,10 +38,14 @@ pub fn pretty_print(lines: usize, cols: usize, x: k::K) {
                 println!("\rinternal err: format 0h not P::M")
             }
         },
+        100 => println!("\r{}", render(format(x))),
         t => {
             let s = render(format(x));
-            if t == 10 && ((s.starts_with("\"{") && s.ends_with("}\"")) || s.starts_with("\"'")) {
-                println!("\r{}", &s[1..s.len()-1]);
+            if t == 10 && s.starts_with("\"'") {
+                print!("\r");
+                for l in (&s[1..s.len()-1]).lines() {
+                    println!("{}", l);
+                }
             } else {
                 for (i, l) in s.lines().enumerate() {
                     if i > lines {

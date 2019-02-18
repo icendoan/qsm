@@ -146,8 +146,20 @@ impl S {
             }
         }
 
-        let k = unsafe { k::ee(k::d9(b)) };
+        let expected_type = k::tk::<i8>(b)[8];
+
+        let k = if (expected_type) == 100 || expected_type == -128 { // decodes into lambda, d9 not yielding full string
+            let len = k::tk::<u8>(b).len() as i64;
+            let k = unsafe { k::ktn(10, len - 16) };
+            k::mtk::<u8>(k).copy_from_slice(&k::tk::<u8>(b)[16..]);
+            unsafe { (*(k as *mut k::K0)).t = k::tk::<i8>(b)[8]; }
+            k
+        } else {
+            unsafe { k::ee(k::d9(b)) }
+        };
+
         unsafe { k::r0(b) };
+
         self.resp.push_back(k);
         self.state = SS::Rdy;
 
