@@ -1,5 +1,5 @@
 use chrono::{NaiveDate, NaiveTime, Duration};
-use std::{ffi, str, fmt::{Write, Display}, f64, cmp};
+use std::{ffi, str, fmt::{Write, Display}, f64, cmp, i64};
 use k;
 
 const N: usize = 100;
@@ -125,6 +125,7 @@ fn dict(lines: usize, cols: usize, k: &k::K0, v: &k::K0) -> String {
     let n = keys.len();
 
     for (k, v) in keys.into_iter().zip(vals.into_iter()).take(if n > lines { n - 1 } else { n }) {
+        l.clear();
         write!(&mut l, "{:key_width$}| {:val_width$}", k, v, key_width = key_width, val_width = val_width).unwrap();
         if l.len() > cols {
             writeln!(&mut s, "{}..", &l[..cols-2]).unwrap();
@@ -510,7 +511,7 @@ fn atom_month(x: k::I) -> P {
     } else {
         let y = 2000 + x / 12;
         let m = x % 12;
-        P::A(format!("{}.{}", y, m))
+        P::A(format!("{}.{:02}", y, m))
     }
 }
 
@@ -518,7 +519,14 @@ fn atom_date(x: k::I) -> P {
     if x == NULL_INT {
         P::A("0Nd".into())
     } else {
-        let d = NaiveDate::from_ymd(2000,1,1) + Duration::days(x as i64);
+        let mut d = NaiveDate::from_ymd(2000,1,1);
+
+        for _ in 0..(x / 365) {
+            d += Duration::days(365)
+        }
+
+        d += Duration::days(x as i64 % 365);
+
         P::A(format!("{}", d))
     }
 }
