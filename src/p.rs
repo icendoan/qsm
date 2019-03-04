@@ -263,7 +263,7 @@ fn format(x: &k::K0) -> P {
         -9 => atom_float(k::fK(x)),
         9 => array("", " ", "", |x| atom_float(*x), k::tk::<k::F>(x)),
         -10 => atom_auto(k::gK(x) as char),
-        10 => array("\"", "", "\"", |x| atom_auto((*x) as char), k::tk::<u8>(x)),
+        10 => P::V { prefix: "\"", infix: "", suffix: "\"", ps: k::tk::<u8>(x).iter().map(|x| atom_auto((*x) as char)).collect() },
         -11 => atom_sym(k::sK(x)),
         11 => array("`", "`", "", |x| atom_sym(*x), k::tk::<k::S>(x)),
         -12 => atom_timestamp(k::jK(x)),

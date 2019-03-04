@@ -212,7 +212,7 @@ fn parse(x: String) -> R<Action> {
                         c => q.push(c)
                     }
                 }
-                q.push_str("\"; {[x;y] \"'\" , x , \"\\n\" , .Q.sbt -3_y}]");
+                q.push_str("\"; {[x;y] \"'\" , x , \"\\n\" , .Q.sbt -2_y}]");
                 q
             },
 

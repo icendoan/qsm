@@ -148,7 +148,7 @@ impl S {
 
         let expected_type = k::tk::<i8>(b)[8];
 
-        let k = if (expected_type) == 100 || expected_type == -128 { // decodes into lambda, d9 not yielding full string
+        let k = if (expected_type) == 100 { // decodes into lambda, d9 not yielding full string
             let len = k::tk::<u8>(b).len() as i64;
             let k = unsafe { k::ktn(10, len - 16) };
             k::mtk::<u8>(k).copy_from_slice(&k::tk::<u8>(b)[16..]);
